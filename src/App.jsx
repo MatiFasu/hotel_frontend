@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import ServiciosView from './components/ServiciosView';
+import ClientesView from './components/ClientesView';
+import EmpleadosView from './components/EmpleadosView';
 import { Compass, Briefcase, Users, UserCheck, ShoppingBag, BarChart3 } from 'lucide-react';
 
 function App() {
@@ -8,8 +10,8 @@ function App() {
   const navItems = [
     { id: 'servicios', label: 'Servicios Turísticos', icon: Compass, enabled: true },
     { id: 'paquetes', label: 'Paquetes', icon: Briefcase, enabled: false },
-    { id: 'clientes', label: 'Clientes', icon: Users, enabled: false },
-    { id: 'empleados', label: 'Empleados', icon: UserCheck, enabled: false },
+    { id: 'clientes', label: 'Clientes', icon: Users, enabled: true },
+    { id: 'empleados', label: 'Empleados', icon: UserCheck, enabled: true },
     { id: 'ventas', label: 'Punto de Venta', icon: ShoppingBag, enabled: false },
     { id: 'reportes', label: 'Reportes & Ganancias', icon: BarChart3, enabled: false },
   ];
@@ -67,6 +69,8 @@ function App() {
       {/* Contenido Principal */}
       <main style={{ flex: 1, padding: '0 1rem 2rem 1rem', maxWidth: '1400px', width: '100%', margin: '0 auto' }}>
         {activeTab === 'servicios' && <ServiciosView />}
+        {activeTab === 'clientes' && <ClientesView />}
+        {activeTab === 'empleados' && <EmpleadosView />}
       </main>
     </div>
   );
