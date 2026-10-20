@@ -106,9 +106,18 @@ export default function ServiciosView() {
 
   const handleBaja = async (id, nombre) => {
     if (!window.confirm(`¿Estás seguro de dar de baja el servicio "${nombre}"?`)) return;
+    setError(null);
+    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/servicios/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Error al dar de baja el servicio');
+      if (!res.ok) {
+        let msg = 'Error al dar de baja el servicio';
+        try {
+          const data = await res.json();
+          if (data && data.message) msg = data.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
       setSuccessMsg(`Servicio "${nombre}" dado de baja`);
       cargarServicios();
     } catch (err) {
