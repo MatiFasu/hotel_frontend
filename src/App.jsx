@@ -3,6 +3,7 @@ import ServiciosView from './components/ServiciosView';
 import PaquetesView from './components/PaquetesView';
 import ClientesView from './components/ClientesView';
 import EmpleadosView from './components/EmpleadosView';
+import VentasView from './components/VentasView';
 import { Compass, Briefcase, Users, UserCheck, ShoppingBag, BarChart3 } from 'lucide-react';
 
 function App() {
@@ -13,7 +14,7 @@ function App() {
     { id: 'paquetes', label: 'Paquetes', icon: Briefcase, enabled: true },
     { id: 'clientes', label: 'Clientes', icon: Users, enabled: true },
     { id: 'empleados', label: 'Empleados', icon: UserCheck, enabled: true },
-    { id: 'ventas', label: 'Punto de Venta', icon: ShoppingBag, enabled: false },
+    { id: 'ventas', label: 'Punto de Venta', icon: ShoppingBag, enabled: true },
     { id: 'reportes', label: 'Reportes & Ganancias', icon: BarChart3, enabled: false },
   ];
 
@@ -73,6 +74,7 @@ function App() {
         {activeTab === 'paquetes' && <PaquetesView />}
         {activeTab === 'clientes' && <ClientesView />}
         {activeTab === 'empleados' && <EmpleadosView />}
+        {activeTab === 'ventas' && <VentasView />}
       </main>
     </div>
   );
