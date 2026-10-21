@@ -17,7 +17,7 @@ const INITIAL_FORM = {
   rol: 'VENDEDOR'
 };
 
-export default function EmpleadosView() {
+export default function EmpleadosView({ sesion }) {
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,7 +26,7 @@ export default function EmpleadosView() {
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
-  const [rolSimulado, setRolSimulado] = useState('ADMIN');
+  const [rolSimulado, setRolSimulado] = useState(sesion?.rol || 'ADMIN');
   const [sueldosRevelados, setSueldosRevelados] = useState({});
   const [formData, setFormData] = useState(INITIAL_FORM);
 

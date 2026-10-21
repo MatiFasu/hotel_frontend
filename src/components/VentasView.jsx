@@ -14,7 +14,7 @@ import {
   DollarSign
 } from 'lucide-react';
 
-export default function VentasView() {
+export default function VentasView({ sesion }) {
   const [ventas, setVentas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [empleados, setEmpleados] = useState([]);
@@ -78,7 +78,13 @@ export default function VentasView() {
       setMediosPago(dataMedios);
 
       if (!clienteId && dataClientes.length > 0) setClienteId(String(dataClientes[0].idCliente));
-      if (!empleadoId && dataEmpleados.length > 0) setEmpleadoId(String(dataEmpleados[0].idEmpleado));
+      if (!empleadoId) {
+        if (sesion?.empleadoId) {
+          setEmpleadoId(String(sesion.empleadoId));
+        } else if (dataEmpleados.length > 0) {
+          setEmpleadoId(String(dataEmpleados[0].idEmpleado));
+        }
+      }
       if (!servicioId && dataServicios.length > 0) setServicioId(String(dataServicios[0].codigoServicio));
       if (!paqueteId && dataPaquetes.length > 0) setPaqueteId(String(dataPaquetes[0].codigoPaquete));
     } catch (err) {

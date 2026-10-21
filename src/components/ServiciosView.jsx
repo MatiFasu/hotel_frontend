@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle, AlertTriangle, RefreshCw, Trash2, Calendar, MapPin, Tag } from 'lucide-react';
+import { Plus, CheckCircle, AlertTriangle, RefreshCw, Trash2, Edit2, Calendar, MapPin } from 'lucide-react';
 
 const TIPOS_SERVICIO = [
   { value: 'HOTEL', label: 'Hotel por noche/s' },
@@ -11,24 +11,26 @@ const TIPOS_SERVICIO = [
   { value: 'ENTRADA_EVENTO', label: 'Entrada a Evento' }
 ];
 
+const INITIAL_FORM = {
+  nombre: '',
+  descripcionBreve: '',
+  destinoServicio: '',
+  fechaServicio: '',
+  costoServicio: '',
+  tipoServicio: 'HOTEL'
+};
+
 export default function ServiciosView() {
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState('');
 
-  // Estado del formulario
-  const [formData, setFormData] = useState({
-    nombre: '',
-    descripcionBreve: '',
-    destinoServicio: '',
-    fechaServicio: '',
-    costoServicio: '',
-    tipoServicio: 'HOTEL'
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM);
 
   const cargarServicios = async () => {
     try {
@@ -68,14 +70,41 @@ export default function ServiciosView() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleCrearServicio = async (e) => {
+  const abrirNuevo = () => {
+    setEditingId(null);
+    setFormData(INITIAL_FORM);
+    setShowForm(!showForm);
+    setError(null);
+    setSuccessMsg(null);
+  };
+
+  const abrirEdicion = (servicio) => {
+    setEditingId(servicio.codigoServicio);
+    setFormData({
+      nombre: servicio.nombre || '',
+      descripcionBreve: servicio.descripcionBreve || '',
+      destinoServicio: servicio.destinoServicio || '',
+      fechaServicio: servicio.fechaServicio || '',
+      costoServicio: servicio.costoServicio || '',
+      tipoServicio: servicio.tipoServicio || 'HOTEL'
+    });
+    setShowForm(true);
+    setError(null);
+    setSuccessMsg(null);
+  };
+
+  const handleGuardarServicio = async (e) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
 
     try {
-      const res = await fetch('/api/servicios', {
-        method: 'POST',
+      const isEdit = editingId !== null;
+      const url = isEdit ? `/api/servicios/${editingId}` : '/api/servicios';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -85,19 +114,17 @@ export default function ServiciosView() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Error al crear el servicio');
+        throw new Error(data.message || 'Error al guardar el servicio turístico');
       }
 
-      setSuccessMsg(`¡Servicio "${data.nombre}" creado exitosamente!`);
+      setSuccessMsg(
+        isEdit
+          ? `¡Servicio "${data.nombre}" actualizado exitosamente!`
+          : `¡Servicio "${data.nombre}" creado exitosamente!`
+      );
       setShowForm(false);
-      setFormData({
-        nombre: '',
-        descripcionBreve: '',
-        destinoServicio: '',
-        fechaServicio: '',
-        costoServicio: '',
-        tipoServicio: 'HOTEL'
-      });
+      setEditingId(null);
+      setFormData(INITIAL_FORM);
       cargarServicios();
     } catch (err) {
       setError(err.message);
@@ -126,6 +153,8 @@ export default function ServiciosView() {
   };
 
   const handleReactivar = async (id, nombre) => {
+    setError(null);
+    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/servicios/${id}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
@@ -147,7 +176,7 @@ export default function ServiciosView() {
             Gestión y oferta de servicios individuales para venta directa o composición de paquetes.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <button className="btn-primary" onClick={abrirNuevo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Plus size={18} />
           {showForm ? 'Cerrar Formulario' : 'Nuevo Servicio'}
         </button>
@@ -168,11 +197,13 @@ export default function ServiciosView() {
         </div>
       )}
 
-      {/* Formulario de Alta */}
+      {/* Formulario de Alta / Edición */}
       {showForm && (
-        <form onSubmit={handleCrearServicio} className="glass-panel" style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--accent-primary)' }}>Registrar Nuevo Servicio</h3>
-          
+        <form onSubmit={handleGuardarServicio} className="glass-panel" style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
+            {editingId ? `Editar Servicio Turístico #${editingId}` : 'Registrar Nuevo Servicio'}
+          </h3>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Nombre del Servicio *</label>
@@ -221,7 +252,7 @@ export default function ServiciosView() {
                 type="date"
                 name="fechaServicio"
                 required
-                min={new Date().toISOString().split('T')[0]}
+                min={editingId ? undefined : new Date().toISOString().split('T')[0]}
                 className="input-control"
                 value={formData.fechaServicio}
                 onChange={handleInputChange}
@@ -257,8 +288,16 @@ export default function ServiciosView() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-            <button type="submit" className="btn-primary">Guardar Servicio</button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => { setShowForm(false); setEditingId(null); }}
+            >
+              Cancelar
+            </button>
+            <button type="submit" className="btn-primary">
+              {editingId ? 'Guardar Cambios' : 'Guardar Servicio'}
+            </button>
           </div>
         </form>
       )}
@@ -351,25 +390,39 @@ export default function ServiciosView() {
                     </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    {s.activo ? (
-                      <button
-                        className="btn-danger"
-                        title="Dar de baja lógica"
-                        onClick={() => handleBaja(s.codigoServicio, s.nombre)}
-                      >
-                        <Trash2 size={14} style={{ marginRight: '4px' }} />
-                        Dar de Baja
-                      </button>
-                    ) : (
-                      <button
-                        className="btn-success"
-                        title="Reactivar servicio"
-                        onClick={() => handleReactivar(s.codigoServicio, s.nombre)}
-                      >
-                        <RefreshCw size={14} style={{ marginRight: '4px' }} />
-                        Reactivar
-                      </button>
-                    )}
+                    <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                      {s.activo ? (
+                        <>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                            onClick={() => abrirEdicion(s)}
+                          >
+                            <Edit2 size={13} />
+                            Editar
+                          </button>
+                          <button
+                            className="btn-danger"
+                            title="Dar de baja lógica"
+                            onClick={() => handleBaja(s.codigoServicio, s.nombre)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          >
+                            <Trash2 size={14} />
+                            Dar de Baja
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn-success"
+                          title="Reactivar servicio"
+                          onClick={() => handleReactivar(s.codigoServicio, s.nombre)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                        >
+                          <RefreshCw size={14} />
+                          Reactivar
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
