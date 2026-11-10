@@ -18,6 +18,9 @@ const INITIAL_FORM = {
 };
 
 export default function EmpleadosView({ sesion }) {
+  const rolUsuario = sesion?.rol || 'VENDEDOR';
+  const esAdmin = rolUsuario === 'ADMIN';
+
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,7 +29,6 @@ export default function EmpleadosView({ sesion }) {
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
-  const [rolSimulado, setRolSimulado] = useState(sesion?.rol || 'ADMIN');
   const [sueldosRevelados, setSueldosRevelados] = useState({});
   const [formData, setFormData] = useState(INITIAL_FORM);
 
@@ -52,6 +54,32 @@ export default function EmpleadosView({ sesion }) {
       }
       const data = await res.json();
       setEmpleados(data);
+
+      // Si el usuario autenticado es ADMIN, precargar automáticamente las remuneraciones
+      if (esAdmin) {
+        const sueldosMap = {};
+        await Promise.all(
+          data.map(async (emp) => {
+            try {
+              const detRes = await fetch(`/api/empleados/${emp.idEmpleado}`, {
+                headers: {
+                  'X-User-Role': 'ADMIN',
+                  ...(sesion?.token ? { Authorization: `Bearer ${sesion.token}` } : {})
+                }
+              });
+              if (detRes.ok) {
+                const det = await detRes.json();
+                if (det.sueldo !== undefined && det.sueldo !== null) {
+                  sueldosMap[emp.idEmpleado] = det.sueldo;
+                }
+              }
+            } catch (_) {}
+          })
+        );
+        setSueldosRevelados(sueldosMap);
+      } else {
+        setSueldosRevelados({});
+      }
     } catch (err) {
       setError(err.message || 'No se pudieron cargar los empleados');
     } finally {
@@ -61,14 +89,7 @@ export default function EmpleadosView({ sesion }) {
 
   useEffect(() => {
     cargarEmpleados();
-  }, [mostrarTodos, busqueda]);
-
-  // Al cambiar el rol simulado a VENDEDOR, limpiar los sueldos revelados en pantalla
-  useEffect(() => {
-    if (rolSimulado !== 'ADMIN') {
-      setSueldosRevelados({});
-    }
-  }, [rolSimulado]);
+  }, [mostrarTodos, busqueda, sesion?.rol]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -115,32 +136,36 @@ export default function EmpleadosView({ sesion }) {
   };
 
   const handleConsultarSueldo = async (idEmpleado) => {
-    setError(null);
-    if (sueldosRevelados[idEmpleado] !== undefined) {
-      setSueldosRevelados(prev => {
-        const next = { ...prev };
-        delete next[idEmpleado];
-        return next;
-      });
+    if (!esAdmin) {
+      setError('Acceso denegado: El rol VENDEDOR no tiene permisos para visualizar remuneraciones salariales (Decisión 17).');
       return;
     }
-
+    setError(null);
     try {
       const res = await fetch(`/api/empleados/${idEmpleado}`, {
-        headers: { 'X-User-Role': rolSimulado }
+        headers: {
+          'X-User-Role': 'ADMIN',
+          ...(sesion?.token ? { Authorization: `Bearer ${sesion.token}` } : {})
+        }
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'No se pudo consultar el detalle');
       }
-      if (data.sueldo === undefined || data.sueldo === null) {
-        setError(`Acceso restringido (Decisión 17): Con rol "${rolSimulado}" el campo salarial permanece oculto en la API.`);
-      } else {
+      if (data.sueldo !== undefined && data.sueldo !== null) {
         setSueldosRevelados(prev => ({ ...prev, [idEmpleado]: data.sueldo }));
       }
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const handleOcultarSueldo = (idEmpleado) => {
+    setSueldosRevelados(prev => {
+      const next = { ...prev };
+      delete next[idEmpleado];
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -227,25 +252,21 @@ export default function EmpleadosView({ sesion }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          {/* Selector de Rol para demostrar Decisión 17 */}
-          <div className="glass-panel" style={{ padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)' }}>
-            <Shield size={16} color={rolSimulado === 'ADMIN' ? 'var(--accent-success)' : 'var(--accent-warning)'} />
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Vista de Rol:</span>
-            <select
-              className="input-control"
-              style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.82rem', fontWeight: 600 }}
-              value={rolSimulado}
-              onChange={(e) => setRolSimulado(e.target.value)}
-            >
-              <option value="ADMIN">ADMIN (Ve Sueldos)</option>
-              <option value="VENDEDOR">VENDEDOR (Sueldo Oculto)</option>
-            </select>
+          {/* Indicador de Rol autenticado (Decisión 17) */}
+          <div className="glass-panel" style={{ padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)' }}>
+            <Shield size={16} color={esAdmin ? 'var(--accent-success)' : 'var(--accent-warning)'} />
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Nivel de Acceso:</span>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: esAdmin ? 'var(--accent-success)' : '#fbbf24' }}>
+              {rolUsuario} — {esAdmin ? 'Visualización de Sueldos Habilitada' : 'Sueldos Confidenciales'}
+            </span>
           </div>
 
-          <button className="btn-primary" onClick={abrirNuevo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Plus size={18} />
-            {showForm ? 'Cerrar Formulario' : 'Nuevo Empleado'}
-          </button>
+          {esAdmin && (
+            <button className="btn-primary" onClick={abrirNuevo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Plus size={18} />
+              {showForm ? 'Cerrar Formulario' : 'Nuevo Empleado'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -449,33 +470,40 @@ export default function EmpleadosView({ sesion }) {
                       </span>
                     </td>
                     <td>
-                      {sueldoRevelado !== undefined ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>
-                            ${parseFloat(sueldoRevelado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                          </span>
-                          <button
-                            className="btn-secondary"
-                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                            onClick={() => handleConsultarSueldo(emp.idEmpleado)}
-                            title="Ocultar sueldo"
-                          >
-                            <EyeOff size={12} /> Ocultar
-                          </button>
-                        </div>
+                      {esAdmin ? (
+                        sueldoRevelado !== undefined ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>
+                              ${parseFloat(sueldoRevelado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                              onClick={() => handleOcultarSueldo(emp.idEmpleado)}
+                              title="Ocultar sueldo"
+                            >
+                              <EyeOff size={12} /> Ocultar
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>••••••••</span>
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                              onClick={() => handleConsultarSueldo(emp.idEmpleado)}
+                              title="Ver sueldo del empleado"
+                            >
+                              <Eye size={12} /> Ver Sueldo
+                            </button>
+                          </div>
+                        )
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                            <Lock size={12} /> Oculto en listado
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <Lock size={13} color="#f87171" />
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                            Confidencial (Solo Admin)
                           </span>
-                          <button
-                            className="btn-secondary"
-                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                            onClick={() => handleConsultarSueldo(emp.idEmpleado)}
-                            title="Consultar detalle individual GET /api/empleados/{id}"
-                          >
-                            <Eye size={12} /> Ver Sueldo
-                          </button>
                         </div>
                       )}
                     </td>
@@ -485,37 +513,41 @@ export default function EmpleadosView({ sesion }) {
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                        {isActivo ? (
-                          <>
+                      {esAdmin ? (
+                        <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                          {isActivo ? (
+                            <>
+                              <button
+                                className="btn-secondary"
+                                style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                onClick={() => abrirEdicion(emp)}
+                              >
+                                <Edit2 size={13} />
+                                Editar
+                              </button>
+                              <button
+                                className="btn-danger"
+                                onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                              >
+                                <Trash2 size={14} />
+                                Dar de Baja
+                              </button>
+                            </>
+                          ) : (
                             <button
-                              className="btn-secondary"
-                              style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                              onClick={() => abrirEdicion(emp)}
-                            >
-                              <Edit2 size={13} />
-                              Editar
-                            </button>
-                            <button
-                              className="btn-danger"
-                              onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}
+                              className="btn-success"
+                              onClick={() => handleReactivar(emp.idEmpleado, nombreCompleto)}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                             >
-                              <Trash2 size={14} />
-                              Dar de Baja
+                              <RefreshCw size={14} />
+                              Reactivar
                             </button>
-                          </>
-                        ) : (
-                          <button
-                            className="btn-success"
-                            onClick={() => handleReactivar(emp.idEmpleado, nombreCompleto)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <RefreshCw size={14} />
-                            Reactivar
-                          </button>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Solo Lectura</span>
+                      )}
                     </td>
                   </tr>
                 );
