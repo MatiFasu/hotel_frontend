@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ToastProvider } from './components/ui';
 import LoginView from './components/LoginView';
 import ServiciosView from './components/ServiciosView';
 import PaquetesView from './components/PaquetesView';
@@ -45,7 +46,11 @@ function App() {
 
   // Bloqueo de acceso: si el usuario no inició sesión con credenciales válidas, solo ve la pantalla de Login
   if (!sesion) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <ToastProvider>
+        <LoginView onLoginSuccess={handleLoginSuccess} />
+      </ToastProvider>
+    );
   }
 
   const navItems = [
@@ -58,7 +63,8 @@ function App() {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <ToastProvider>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Barra de Navegación Superior */}
       <header className="glass-panel" style={{ margin: '1rem', padding: '0.85rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 'var(--radius-md)', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -147,6 +153,7 @@ function App() {
         {activeTab === 'reportes' && <ReportesView />}
       </main>
     </div>
+    </ToastProvider>
   );
 }
 
