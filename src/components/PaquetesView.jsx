@@ -8,44 +8,49 @@ import {
   CheckSquare,
   Square,
   Percent,
-  Calendar,
-  MapPin,
   Search,
   AlertTriangle,
-  Tag,
   Package,
 } from 'lucide-react';
 import {
   Button,
   Badge,
   Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
   TableSkeleton,
   EmptyState,
+  Modal,
+  ConfirmDialog,
+  useToast,
 } from './ui';
 
 export default function PaquetesView() {
+  const toast = useToast();
+
   const [paquetes, setPaquetes] = useState([]);
   const [serviciosActivos, setServiciosActivos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
 
   const [nombrePaquete, setNombrePaquete] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
+  const [filtroServicioModal, setFiltroServicioModal] = useState('');
+
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    codigo: null,
+    nombre: '',
+    loading: false,
+  });
 
   const cargarDatos = async () => {
     try {
       setLoading(true);
-      setError(null);
-
       let urlPaquetes = '/api/paquetes';
       if (!mostrarTodos) {
         urlPaquetes += '?activo=true';
@@ -71,7 +76,7 @@ export default function PaquetesView() {
       setPaquetes(dataPaquetes);
       setServiciosActivos(dataServicios);
     } catch (err) {
-      setError(err.message || 'Error al cargar paquetes turísticos');
+      toast.error(err.message || 'Error al cargar paquetes turísticos');
     } finally {
       setLoading(false);
     }
@@ -85,18 +90,18 @@ export default function PaquetesView() {
     setEditingId(null);
     setNombrePaquete('');
     setSelectedIds([]);
-    setShowForm(!showForm);
-    setError(null);
-    setSuccessMsg(null);
+    setFiltroServicioModal('');
+    setFormError(null);
+    setShowModal(true);
   };
 
   const abrirEdicion = (paquete) => {
     setEditingId(paquete.codigoPaquete);
     setNombrePaquete(paquete.nombre || '');
     setSelectedIds((paquete.servicios || []).map(s => s.codigoServicio));
-    setShowForm(true);
-    setError(null);
-    setSuccessMsg(null);
+    setFiltroServicioModal('');
+    setFormError(null);
+    setShowModal(true);
   };
 
   const toggleServicio = (codigoServicio) => {
@@ -120,15 +125,15 @@ export default function PaquetesView() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
 
     if (selectedIds.length < 2) {
-      setError('Un paquete turístico debe incluir como mínimo 2 servicios turísticos distintos (Decisión 3).');
+      setFormError('Un paquete turístico debe incluir como mínimo 2 servicios turísticos distintos (Decisión 3).');
       return;
     }
 
     try {
+      setFormLoading(true);
       const isEdit = editingId !== null;
       const url = isEdit ? `/api/paquetes/${editingId}` : '/api/paquetes';
       const method = isEdit ? 'PUT' : 'POST';
@@ -149,48 +154,58 @@ export default function PaquetesView() {
         throw new Error(data.message || 'Error al guardar el paquete turístico');
       }
 
-      setSuccessMsg(
+      toast.success(
         isEdit
           ? `Paquete "${data.nombre}" actualizado correctamente.`
           : `¡Paquete "${data.nombre}" creado exitosamente con 10% OFF (#${data.codigoPaquete})!`
       );
-      setShowForm(false);
+      setShowModal(false);
       setEditingId(null);
       setNombrePaquete('');
       setSelectedIds([]);
       cargarDatos();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleBaja = async (codigo, nombre) => {
-    if (!window.confirm(`¿Estás seguro de dar de baja lógica al paquete "${nombre}" (#${codigo})?`)) return;
-    setError(null);
-    setSuccessMsg(null);
+  const solicitarBaja = (codigo, nombre) => {
+    setConfirmState({
+      isOpen: true,
+      codigo,
+      nombre,
+      loading: false,
+    });
+  };
+
+  const ejecutarBaja = async () => {
     try {
-      const res = await fetch(`/api/paquetes/${codigo}`, { method: 'DELETE' });
+      setConfirmState(prev => ({ ...prev, loading: true }));
+      const res = await fetch(`/api/paquetes/${confirmState.codigo}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Error al dar de baja el paquete');
-      setSuccessMsg(`Paquete "${nombre}" (#${codigo}) dado de baja lógica.`);
+      toast.success(`Paquete "${confirmState.nombre}" (#${confirmState.codigo}) dado de baja lógica.`);
+      setConfirmState({ isOpen: false, codigo: null, nombre: '', loading: false });
       cargarDatos();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+      setConfirmState(prev => ({ ...prev, loading: false }));
     }
   };
 
   const handleReactivar = async (codigo, nombre) => {
-    setError(null);
-    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/paquetes/${codigo}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'Error al reactivar el paquete');
       }
-      setSuccessMsg(`Paquete "${nombre}" (#${codigo}) reactivado exitosamente.`);
+      toast.success(`Paquete "${nombre}" (#${codigo}) reactivado exitosamente.`);
       cargarDatos();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   };
 
@@ -201,6 +216,16 @@ export default function PaquetesView() {
       p.nombre?.toLowerCase().includes(q) ||
       p.codigoPaquete?.toString().includes(q) ||
       p.servicios?.some(s => s.nombre?.toLowerCase().includes(q) || s.destinoServicio?.toLowerCase().includes(q))
+    );
+  });
+
+  const serviciosDisponiblesFiltrados = serviciosActivos.filter(s => {
+    if (!filtroServicioModal.trim()) return true;
+    const q = filtroServicioModal.toLowerCase();
+    return (
+      s.nombre?.toLowerCase().includes(q) ||
+      s.destinoServicio?.toLowerCase().includes(q) ||
+      s.tipoServicio?.toLowerCase().includes(q)
     );
   });
 
@@ -226,149 +251,9 @@ export default function PaquetesView() {
           onClick={abrirNuevo}
           leftIcon={<Plus size={16} />}
         >
-          {showForm ? 'Cerrar Formulario' : 'Nuevo Paquete'}
+          Nuevo Paquete
         </Button>
       </div>
-
-      {/* Alertas */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
-          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Atención requerida</span>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{successMsg}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSuccessMsg(null)}
-            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
-
-      {/* Formulario de Alta / Edición */}
-      {showForm && (
-        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
-          <CardHeader>
-            <CardTitle>
-              {editingId ? `Editar Paquete Turístico #${editingId}` : 'Armar Nuevo Paquete Turístico'}
-            </CardTitle>
-            <CardDescription>
-              Seleccione al menos 2 servicios activos. El sistema calculará automáticamente el 10% de ahorro.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre del Paquete *</label>
-                <input
-                  type="text"
-                  required
-                  className="input-control"
-                  placeholder="Ej. Escapada a Bariloche Completa (Hotel + Excursión + Vuelo)"
-                  value={nombrePaquete}
-                  onChange={(e) => setNombrePaquete(e.target.value)}
-                />
-              </div>
-
-              {/* Selector interactivo de servicios */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-gray-300">
-                    Seleccionar Servicios Incluidos (Mínimo 2) *
-                  </label>
-                  <span className="text-xs font-bold text-brand-400">
-                    {selectedIds.length} seleccionados
-                  </span>
-                </div>
-
-                {serviciosActivos.length === 0 ? (
-                  <div className="p-4 rounded-lg bg-dark-bg border border-dark-borderSubtle text-xs text-dark-muted text-center">
-                    No hay servicios turísticos activos para combinar. Registre servicios primero.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto p-1">
-                    {serviciosActivos.map(s => {
-                      const isSelected = selectedIds.includes(s.codigoServicio);
-                      return (
-                        <div
-                          key={s.codigoServicio}
-                          onClick={() => toggleServicio(s.codigoServicio)}
-                          className={`
-                            p-3 rounded-lg border cursor-pointer select-none transition-all flex items-start gap-2.5
-                            ${isSelected
-                              ? 'bg-brand-600/15 border-brand-500/40 text-gray-100 shadow-sm'
-                              : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
-                            }
-                          `}
-                        >
-                          <div className="mt-0.5 text-brand-400 shrink-0">
-                            {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-dark-muted" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-semibold truncate">{s.nombre}</span>
-                              <Badge variant="info" size="sm">{s.tipoServicio}</Badge>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] text-dark-muted mt-1">
-                              <span>{s.destinoServicio}</span>
-                              <span className="font-bold text-emerald-400">
-                                ${parseFloat(s.costoServicio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Previsualizador de Descuento del 10% */}
-              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
-                    <Percent size={20} />
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-gray-100">Descuento del 10% OFF aplicado por normativa</h5>
-                    <p className="text-[11px] text-dark-muted mt-0.5">
-                      Subtotal base: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · Ahorro: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-left sm:text-right">
-                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Costo Final con 10% OFF</span>
-                  <span className="text-xl font-extrabold text-emerald-400">
-                    ${costoFinalConDescuento.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
-                <Button variant="secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary" disabled={selectedIds.length < 2}>
-                  {editingId ? 'Guardar Cambios' : 'Crear Paquete con 10% OFF'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Barra de Filtros y Búsqueda */}
       <Card>
@@ -526,7 +411,7 @@ export default function PaquetesView() {
                                 <Button
                                   variant="danger"
                                   size="sm"
-                                  onClick={() => handleBaja(p.codigoPaquete, p.nombre)}
+                                  onClick={() => solicitarBaja(p.codigoPaquete, p.nombre)}
                                   title="Dar de baja lógica"
                                 >
                                   <Trash2 size={13} />
@@ -605,7 +490,7 @@ export default function PaquetesView() {
                             <Button variant="secondary" size="sm" onClick={() => abrirEdicion(p)}>
                               <Edit2 size={12} className="mr-1" /> Editar
                             </Button>
-                            <Button variant="danger" size="sm" onClick={() => handleBaja(p.codigoPaquete, p.nombre)}>
+                            <Button variant="danger" size="sm" onClick={() => solicitarBaja(p.codigoPaquete, p.nombre)}>
                               <Trash2 size={13} />
                             </Button>
                           </>
@@ -623,6 +508,153 @@ export default function PaquetesView() {
           </>
         )}
       </Card>
+
+      {/* Modal Formulario Paquete Turístico */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingId ? `Editar Paquete Turístico #${editingId}` : 'Armar Nuevo Paquete Turístico'}
+        description="Seleccione como mínimo 2 servicios turísticos. El descuento del 10% se calcula y aplica automáticamente."
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {formError && (
+            <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5">
+              <AlertTriangle size={16} className="text-red-400 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Nombre del Paquete *</label>
+            <input
+              type="text"
+              required
+              className="input-control"
+              placeholder="Ej. Escapada a Bariloche Completa (Hotel + Excursión + Vuelo)"
+              value={nombrePaquete}
+              onChange={(e) => setNombrePaquete(e.target.value)}
+            />
+          </div>
+
+          {/* Selector de servicios con filtro */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-300">
+                Servicios a Incluir (Mínimo 2) *
+              </label>
+              <Badge variant={selectedIds.length >= 2 ? 'success' : 'warning'} size="sm">
+                {selectedIds.length} seleccionados
+              </Badge>
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
+              <input
+                type="text"
+                className="input-control pl-8 text-xs py-1.5"
+                placeholder="Filtrar servicios por nombre, destino o tipo..."
+                value={filtroServicioModal}
+                onChange={(e) => setFiltroServicioModal(e.target.value)}
+              />
+            </div>
+
+            {serviciosActivos.length === 0 ? (
+              <div className="p-4 rounded-lg bg-dark-bg border border-dark-borderSubtle text-xs text-dark-muted text-center">
+                No hay servicios turísticos activos para combinar. Registre servicios primero.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1 border border-dark-borderSubtle rounded-lg bg-dark-bg/40">
+                {serviciosDisponiblesFiltrados.map(s => {
+                  const isSelected = selectedIds.includes(s.codigoServicio);
+                  return (
+                    <div
+                      key={s.codigoServicio}
+                      onClick={() => toggleServicio(s.codigoServicio)}
+                      className={`
+                        p-2.5 rounded-lg border cursor-pointer select-none transition-all flex items-start gap-2.5
+                        ${isSelected
+                          ? 'bg-brand-600/20 border-brand-500 text-gray-100 shadow-sm ring-1 ring-brand-500/50'
+                          : 'bg-dark-surface/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                        }
+                      `}
+                    >
+                      <div className="mt-0.5 text-brand-400 shrink-0">
+                        {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-dark-muted" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-semibold truncate">{s.nombre}</span>
+                          <Badge variant="info" size="sm">{s.tipoServicio}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-dark-muted mt-1">
+                          <span>{s.destinoServicio}</span>
+                          <span className="font-bold text-emerald-400">
+                            ${parseFloat(s.costoServicio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Previsualizador de Descuento del 10% */}
+          <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                <Percent size={18} />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-gray-100">Descuento del 10% OFF Normativo</h5>
+                <p className="text-[11px] text-dark-muted mt-0.5">
+                  Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · Ahorro: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-left sm:text-right">
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Costo Final</span>
+              <span className="text-lg font-extrabold text-emerald-400">
+                ${costoFinalConDescuento.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
+            <Button
+              variant="secondary"
+              onClick={() => setShowModal(false)}
+              disabled={formLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={formLoading}
+              disabled={selectedIds.length < 2}
+            >
+              {editingId ? 'Guardar Cambios' : 'Crear Paquete con 10% OFF'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Diálogo de Confirmación para Baja */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={ejecutarBaja}
+        title="Dar de baja al paquete turístico"
+        message={`¿Estás seguro de dar de baja lógica al paquete "${confirmState.nombre}" (#${confirmState.codigo})? No podrá seleccionarse en futuras ventas.`}
+        confirmText="Confirmar Baja"
+        cancelText="Cancelar"
+        variant="danger"
+        loading={confirmState.loading}
+      />
     </div>
   );
 }

@@ -24,6 +24,9 @@ import {
   CardContent,
   TableSkeleton,
   EmptyState,
+  Modal,
+  ConfirmDialog,
+  useToast,
 } from './ui';
 
 const INITIAL_FORM = {
@@ -38,20 +41,29 @@ const INITIAL_FORM = {
 };
 
 export default function ClientesView() {
+  const toast = useToast();
+
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [formData, setFormData] = useState(INITIAL_FORM);
 
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    id: null,
+    nombre: '',
+    loading: false,
+  });
+
   const cargarClientes = async () => {
     try {
       setLoading(true);
-      setError(null);
       let url = '/api/clientes';
       const params = new URLSearchParams();
       if (!mostrarTodos) {
@@ -71,7 +83,7 @@ export default function ClientesView() {
       const data = await res.json();
       setClientes(data);
     } catch (err) {
-      setError(err.message || 'No se pudieron cargar los clientes');
+      toast.error(err.message || 'No se pudieron cargar los clientes');
     } finally {
       setLoading(false);
     }
@@ -89,9 +101,8 @@ export default function ClientesView() {
   const abrirNuevo = () => {
     setEditingId(null);
     setFormData(INITIAL_FORM);
-    setShowForm(!showForm);
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
+    setShowModal(true);
   };
 
   const abrirEdicion = (cliente) => {
@@ -106,17 +117,16 @@ export default function ClientesView() {
       celular: cliente.celular || '',
       email: cliente.email || ''
     });
-    setShowForm(true);
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
+    setShowModal(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
 
     try {
+      setFormLoading(true);
       const isEdit = editingId !== null;
       const url = isEdit ? `/api/clientes/${editingId}` : '/api/clientes';
       const method = isEdit ? 'PUT' : 'POST';
@@ -133,47 +143,57 @@ export default function ClientesView() {
       }
 
       if (isEdit) {
-        setSuccessMsg(`Cliente "${data.nombre} ${data.apellido}" actualizado correctamente.`);
+        toast.success(`Cliente "${data.nombre} ${data.apellido}" actualizado correctamente.`);
       } else if (res.status === 200 || data.reactivado) {
-        setSuccessMsg(`¡DNI encontrado inactivo! El cliente "${data.nombre} ${data.apellido}" fue reactivado y actualizado (HTTP 200).`);
+        toast.success(`¡DNI encontrado inactivo! El cliente "${data.nombre} ${data.apellido}" fue reactivado y actualizado (HTTP 200).`);
       } else {
-        setSuccessMsg(`¡Cliente "${data.nombre} ${data.apellido}" registrado exitosamente (HTTP 201)!`);
+        toast.success(`¡Cliente "${data.nombre} ${data.apellido}" registrado exitosamente (HTTP 201)!`);
       }
 
-      setShowForm(false);
+      setShowModal(false);
       setEditingId(null);
       setFormData(INITIAL_FORM);
       cargarClientes();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleBaja = async (id, nombreCompleto) => {
-    if (!window.confirm(`¿Estás seguro de dar de baja lógica al cliente "${nombreCompleto}"?`)) return;
-    setError(null);
-    setSuccessMsg(null);
+  const solicitarBaja = (id, nombreCompleto) => {
+    setConfirmState({
+      isOpen: true,
+      id,
+      nombre: nombreCompleto,
+      loading: false,
+    });
+  };
+
+  const ejecutarBaja = async () => {
     try {
-      const res = await fetch(`/api/clientes/${id}`, { method: 'DELETE' });
+      setConfirmState(prev => ({ ...prev, loading: true }));
+      const res = await fetch(`/api/clientes/${confirmState.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Error al dar de baja al cliente');
-      setSuccessMsg(`Cliente "${nombreCompleto}" dado de baja lógica.`);
+      toast.success(`Cliente "${confirmState.nombre}" dado de baja lógica.`);
+      setConfirmState({ isOpen: false, id: null, nombre: '', loading: false });
       cargarClientes();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+      setConfirmState(prev => ({ ...prev, loading: false }));
     }
   };
 
   const handleReactivar = async (id, nombreCompleto) => {
-    setError(null);
-    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/clientes/${id}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Error al reactivar el cliente');
-      setSuccessMsg(`Cliente "${nombreCompleto}" reactivado exitosamente.`);
+      toast.success(`Cliente "${nombreCompleto}" reactivado exitosamente.`);
       cargarClientes();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   };
 
@@ -194,170 +214,161 @@ export default function ClientesView() {
           onClick={abrirNuevo}
           leftIcon={<Plus size={16} />}
         >
-          {showForm ? 'Cerrar Formulario' : 'Nuevo Cliente'}
+          Nuevo Cliente
         </Button>
       </div>
 
-      {/* Alertas */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
-          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Atención requerida</span>
-            <span>{error}</span>
+      {/* Modal Accesible de Alta / Edición */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingId ? `Editar Cliente #${editingId}` : 'Registrar Nuevo Cliente'}
+        description="Los clientes dados de baja que se registren nuevamente con el mismo DNI se reactivarán automáticamente conservando su historial."
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+              <AlertTriangle size={15} className="text-red-400 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre *</label>
+              <input
+                type="text"
+                name="nombre"
+                required
+                className="input-control"
+                placeholder="Ej. Martín"
+                value={formData.nombre}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Apellido *</label>
+              <input
+                type="text"
+                name="apellido"
+                required
+                className="input-control"
+                placeholder="Ej. Rossi"
+                value={formData.apellido}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">DNI *</label>
+              <input
+                type="text"
+                name="dni"
+                required
+                className="input-control"
+                placeholder="Ej. 34111222"
+                value={formData.dni}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha de Nacimiento *</label>
+              <input
+                type="date"
+                name="fechaNacimiento"
+                required
+                className="input-control"
+                value={formData.fechaNacimiento}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nacionalidad *</label>
+              <input
+                type="text"
+                name="nacionalidad"
+                required
+                className="input-control"
+                placeholder="Ej. Argentina"
+                value={formData.nacionalidad}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Celular *</label>
+              <input
+                type="text"
+                name="celular"
+                required
+                className="input-control"
+                placeholder="Ej. +54 9 221 4455-6677"
+                value={formData.celular}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email *</label>
+              <input
+                type="email"
+                name="email"
+                required
+                className="input-control"
+                placeholder="Ej. martin.rossi@email.com"
+                value={formData.email}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Dirección *</label>
+              <input
+                type="text"
+                name="direccion"
+                required
+                className="input-control"
+                placeholder="Ej. Calle 50 Nº 620"
+                value={formData.direccion}
+                onChange={handleInputChange}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{successMsg}</span>
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-dark-borderSubtle mt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowModal(false)}
+              disabled={formLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={formLoading}
+            >
+              {editingId ? 'Guardar Cambios' : 'Registrar Cliente'}
+            </Button>
           </div>
-          <button
-            type="button"
-            onClick={() => setSuccessMsg(null)}
-            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {/* Formulario Alta / Edición */}
-      {showForm && (
-        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
-          <CardHeader>
-            <CardTitle>
-              {editingId ? `Editar Cliente #${editingId}` : 'Registrar Nuevo Cliente (o Reactivar por DNI)'}
-            </CardTitle>
-            <CardDescription>
-              Los clientes dados de baja que se registren nuevamente con el mismo DNI se reactivarán automáticamente conservando su historial.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre *</label>
-                  <input
-                    type="text"
-                    name="nombre"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Martín"
-                    value={formData.nombre}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Apellido *</label>
-                  <input
-                    type="text"
-                    name="apellido"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Rossi"
-                    value={formData.apellido}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">DNI *</label>
-                  <input
-                    type="text"
-                    name="dni"
-                    required
-                    className="input-control"
-                    placeholder="Ej. 34111222"
-                    value={formData.dni}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha de Nacimiento *</label>
-                  <input
-                    type="date"
-                    name="fechaNacimiento"
-                    required
-                    className="input-control"
-                    value={formData.fechaNacimiento}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nacionalidad *</label>
-                  <input
-                    type="text"
-                    name="nacionalidad"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Argentina"
-                    value={formData.nacionalidad}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Dirección *</label>
-                  <input
-                    type="text"
-                    name="direccion"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Calle 50 Nº 620"
-                    value={formData.direccion}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Celular *</label>
-                  <input
-                    type="text"
-                    name="celular"
-                    required
-                    className="input-control"
-                    placeholder="Ej. +54 9 221 4455-6677"
-                    value={formData.celular}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email *</label>
-                  <input
-                    type="email"
-                    name="email"
-                    required
-                    className="input-control"
-                    placeholder="Ej. martin.rossi@email.com"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
-                <Button
-                  variant="secondary"
-                  onClick={() => { setShowForm(false); setEditingId(null); }}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary">
-                  {editingId ? 'Guardar Cambios' : 'Registrar Cliente'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      {/* Diálogo de Confirmación Accesible */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={ejecutarBaja}
+        title="¿Dar de baja lógica al cliente?"
+        message={`¿Estás seguro de dar de baja lógica al cliente "${confirmState.nombre}"? Sus ventas históricas permanecerán intactas y su registro podrá ser reactivado.`}
+        confirmText="Dar de Baja"
+        variant="danger"
+        loading={confirmState.loading}
+      />
 
       {/* Barra de Filtros y Búsqueda */}
       <Card>
@@ -508,7 +519,7 @@ export default function ClientesView() {
                                 <Button
                                   variant="danger"
                                   size="sm"
-                                  onClick={() => handleBaja(c.idCliente, nombreCompleto)}
+                                  onClick={() => solicitarBaja(c.idCliente, nombreCompleto)}
                                   title="Dar de baja lógica"
                                 >
                                   <Trash2 size={13} />
@@ -581,7 +592,7 @@ export default function ClientesView() {
                             <Button variant="secondary" size="sm" onClick={() => abrirEdicion(c)}>
                               <Edit2 size={12} className="mr-1" /> Editar
                             </Button>
-                            <Button variant="danger" size="sm" onClick={() => handleBaja(c.idCliente, nombreCompleto)}>
+                            <Button variant="danger" size="sm" onClick={() => solicitarBaja(c.idCliente, nombreCompleto)}>
                               <Trash2 size={13} />
                             </Button>
                           </>

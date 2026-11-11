@@ -19,12 +19,11 @@ import {
   Button,
   Badge,
   Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
   TableSkeleton,
   EmptyState,
+  Modal,
+  ConfirmDialog,
+  useToast,
 } from './ui';
 
 const INITIAL_FORM = {
@@ -46,22 +45,30 @@ const INITIAL_FORM = {
 export default function EmpleadosView({ sesion }) {
   const rolUsuario = sesion?.rol || 'VENDEDOR';
   const esAdmin = rolUsuario === 'ADMIN';
+  const toast = useToast();
 
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [sueldosRevelados, setSueldosRevelados] = useState({});
   const [formData, setFormData] = useState(INITIAL_FORM);
 
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    id: null,
+    nombre: '',
+    loading: false,
+  });
+
   const cargarEmpleados = async () => {
     try {
       setLoading(true);
-      setError(null);
       let url = '/api/empleados';
       const params = new URLSearchParams();
       if (!mostrarTodos) {
@@ -107,7 +114,7 @@ export default function EmpleadosView({ sesion }) {
         setSueldosRevelados({});
       }
     } catch (err) {
-      setError(err.message || 'No se pudieron cargar los empleados');
+      toast.error(err.message || 'No se pudieron cargar los empleados');
     } finally {
       setLoading(false);
     }
@@ -125,14 +132,12 @@ export default function EmpleadosView({ sesion }) {
   const abrirNuevo = () => {
     setEditingId(null);
     setFormData(INITIAL_FORM);
-    setShowForm(!showForm);
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
+    setShowModal(true);
   };
 
   const abrirEdicion = async (emp) => {
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
     try {
       const res = await fetch(`/api/empleados/${emp.idEmpleado}`, {
         headers: {
@@ -157,18 +162,17 @@ export default function EmpleadosView({ sesion }) {
         password: '',
         rol: detalle.rol || 'VENDEDOR'
       });
-      setShowForm(true);
+      setShowModal(true);
     } catch (err) {
-      setError('No se pudo cargar el detalle del empleado para editar');
+      toast.error('No se pudo cargar el detalle del empleado para editar');
     }
   };
 
   const handleConsultarSueldo = async (idEmpleado) => {
     if (!esAdmin) {
-      setError('Acceso denegado: El rol VENDEDOR no tiene permisos para visualizar remuneraciones salariales (Decisión 17).');
+      toast.error('Acceso denegado: El rol VENDEDOR no tiene permisos para visualizar remuneraciones salariales.');
       return;
     }
-    setError(null);
     try {
       const res = await fetch(`/api/empleados/${idEmpleado}`, {
         headers: {
@@ -184,7 +188,7 @@ export default function EmpleadosView({ sesion }) {
         setSueldosRevelados(prev => ({ ...prev, [idEmpleado]: data.sueldo }));
       }
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   };
 
@@ -198,10 +202,10 @@ export default function EmpleadosView({ sesion }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
 
     try {
+      setFormLoading(true);
       const isEdit = editingId !== null;
       const url = isEdit ? `/api/empleados/${editingId}` : '/api/empleados';
       const method = isEdit ? 'PUT' : 'POST';
@@ -223,47 +227,57 @@ export default function EmpleadosView({ sesion }) {
       }
 
       if (isEdit) {
-        setSuccessMsg(`Empleado "${data.nombre} ${data.apellido}" actualizado correctamente.`);
+        toast.success(`Empleado "${data.nombre} ${data.apellido}" actualizado correctamente.`);
       } else if (res.status === 200 || data.reactivado) {
-        setSuccessMsg(`¡DNI encontrado inactivo! El empleado "${data.nombre} ${data.apellido}" fue reactivado y actualizado (HTTP 200).`);
+        toast.success(`¡DNI reactivado! El empleado "${data.nombre} ${data.apellido}" fue dado de alta nuevamente (HTTP 200).`);
       } else {
-        setSuccessMsg(`¡Empleado "${data.nombre} ${data.apellido}" registrado exitosamente (HTTP 201)!`);
+        toast.success(`¡Empleado "${data.nombre} ${data.apellido}" registrado exitosamente!`);
       }
 
-      setShowForm(false);
+      setShowModal(false);
       setEditingId(null);
       setFormData(INITIAL_FORM);
       cargarEmpleados();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleBaja = async (id, nombreCompleto) => {
-    if (!window.confirm(`¿Estás seguro de dar de baja lógica al empleado "${nombreCompleto}"?`)) return;
-    setError(null);
-    setSuccessMsg(null);
+  const solicitarBaja = (id, nombreCompleto) => {
+    setConfirmState({
+      isOpen: true,
+      id,
+      nombre: nombreCompleto,
+      loading: false,
+    });
+  };
+
+  const ejecutarBaja = async () => {
     try {
-      const res = await fetch(`/api/empleados/${id}`, { method: 'DELETE' });
+      setConfirmState(prev => ({ ...prev, loading: true }));
+      const res = await fetch(`/api/empleados/${confirmState.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Error al dar de baja al empleado');
-      setSuccessMsg(`Empleado "${nombreCompleto}" dado de baja lógica.`);
+      toast.success(`Empleado "${confirmState.nombre}" dado de baja lógica.`);
+      setConfirmState({ isOpen: false, id: null, nombre: '', loading: false });
       cargarEmpleados();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+      setConfirmState(prev => ({ ...prev, loading: false }));
     }
   };
 
   const handleReactivar = async (id, nombreCompleto) => {
-    setError(null);
-    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/empleados/${id}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Error al reactivar el empleado');
-      setSuccessMsg(`Empleado "${nombreCompleto}" reactivado exitosamente.`);
+      toast.success(`Empleado "${nombreCompleto}" reactivado exitosamente.`);
       cargarEmpleados();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   };
 
@@ -292,144 +306,11 @@ export default function EmpleadosView({ sesion }) {
               onClick={abrirNuevo}
               leftIcon={<Plus size={16} />}
             >
-              {showForm ? 'Cerrar Formulario' : 'Nuevo Empleado'}
+              Nuevo Empleado
             </Button>
           )}
         </div>
       </div>
-
-      {/* Alertas */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
-          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Atención requerida</span>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{successMsg}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSuccessMsg(null)}
-            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
-
-      {/* Formulario Alta / Edición (Solo para ADMIN) */}
-      {showForm && esAdmin && (
-        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
-          <CardHeader>
-            <CardTitle>
-              {editingId ? `Editar Empleado #${editingId}` : 'Registrar Nuevo Empleado (o Reactivar por DNI)'}
-            </CardTitle>
-            <CardDescription>
-              El sueldo debe ser mayor a cero. Los DNI dados de baja se reactivan automáticamente.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre *</label>
-                  <input type="text" name="nombre" required className="input-control" placeholder="Ej. Lucía" value={formData.nombre} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Apellido *</label>
-                  <input type="text" name="apellido" required className="input-control" placeholder="Ej. Fernández" value={formData.apellido} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">DNI *</label>
-                  <input type="text" name="dni" required className="input-control" placeholder="Ej. 29888777" value={formData.dni} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha de Nacimiento *</label>
-                  <input type="date" name="fechaNac" required className="input-control" value={formData.fechaNac} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nacionalidad *</label>
-                  <input type="text" name="nacionalidad" required className="input-control" placeholder="Ej. Argentina" value={formData.nacionalidad} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Dirección *</label>
-                  <input type="text" name="direccion" required className="input-control" placeholder="Ej. Av. Santa Fe 1500" value={formData.direccion} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Celular *</label>
-                  <input type="text" name="celular" required className="input-control" placeholder="Ej. +54 9 11 5566-7788" value={formData.celular} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email *</label>
-                  <input type="email" name="email" required className="input-control" placeholder="Ej. lucia@agencia.com" value={formData.email} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cargo *</label>
-                  <input type="text" name="cargo" required className="input-control" placeholder="Ej. Ejecutiva de Ventas" value={formData.cargo} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Sueldo Mensual ($ ARS) *</label>
-                  <input type="number" step="0.01" min="0.01" name="sueldo" required className="input-control" placeholder="Ej. 850000.00" value={formData.sueldo} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Usuario (Username) *</label>
-                  <input type="text" name="username" required className="input-control" placeholder="Ej. lfernandez" value={formData.username} onChange={handleInputChange} />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-                    Contraseña {editingId ? '(Opcional)' : '*'}
-                  </label>
-                  <input
-                    type="password"
-                    name="password"
-                    required={!editingId}
-                    className="input-control"
-                    placeholder={editingId ? 'Dejar en blanco para mantener' : 'Contraseña de acceso'}
-                    value={formData.password}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Rol en el Sistema *</label>
-                  <select name="rol" required className="input-control" value={formData.rol} onChange={handleInputChange}>
-                    <option value="VENDEDOR">VENDEDOR</option>
-                    <option value="ADMIN">ADMIN</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
-                <Button variant="secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary">
-                  {editingId ? 'Guardar Cambios' : 'Registrar Empleado'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Filtros y Búsqueda */}
       <Card>
@@ -614,7 +495,7 @@ export default function EmpleadosView({ sesion }) {
                                   <Button
                                     variant="danger"
                                     size="sm"
-                                    onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}
+                                    onClick={() => solicitarBaja(emp.idEmpleado, nombreCompleto)}
                                     title="Dar de baja lógica"
                                   >
                                     <Trash2 size={13} />
@@ -699,7 +580,7 @@ export default function EmpleadosView({ sesion }) {
                               <Button variant="secondary" size="sm" onClick={() => abrirEdicion(emp)}>
                                 <Edit2 size={12} className="mr-1" /> Editar
                               </Button>
-                              <Button variant="danger" size="sm" onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}>
+                              <Button variant="danger" size="sm" onClick={() => solicitarBaja(emp.idEmpleado, nombreCompleto)}>
                                 <Trash2 size={13} />
                               </Button>
                             </>
@@ -718,6 +599,231 @@ export default function EmpleadosView({ sesion }) {
           </>
         )}
       </Card>
+
+      {/* Modal Formulario Empleado (Solo ADMIN) */}
+      {esAdmin && (
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={editingId ? `Editar Empleado #${editingId}` : 'Registrar Nuevo Empleado'}
+          description="Los empleados dados de baja previamente por DNI se reactivarán automáticamente al guardar."
+          size="lg"
+        >
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {formError && (
+              <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5">
+                <AlertTriangle size={16} className="text-red-400 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  name="nombre"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Lucía"
+                  value={formData.nombre}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Apellido *</label>
+                <input
+                  type="text"
+                  name="apellido"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Fernández"
+                  value={formData.apellido}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">DNI *</label>
+                <input
+                  type="text"
+                  name="dni"
+                  required
+                  className="input-control"
+                  placeholder="Ej. 29888777"
+                  value={formData.dni}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Fecha de Nacimiento *</label>
+                <input
+                  type="date"
+                  name="fechaNac"
+                  required
+                  className="input-control"
+                  value={formData.fechaNac}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Nacionalidad *</label>
+                <input
+                  type="text"
+                  name="nacionalidad"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Argentina"
+                  value={formData.nacionalidad}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Dirección *</label>
+                <input
+                  type="text"
+                  name="direccion"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Av. Santa Fe 1500"
+                  value={formData.direccion}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Celular *</label>
+                <input
+                  type="text"
+                  name="celular"
+                  required
+                  className="input-control"
+                  placeholder="Ej. +54 9 11 5566-7788"
+                  value={formData.celular}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  className="input-control"
+                  placeholder="Ej. lucia@agencia.com"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Cargo *</label>
+                <input
+                  type="text"
+                  name="cargo"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Ejecutiva de Ventas"
+                  value={formData.cargo}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Sueldo Mensual ($ ARS) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  name="sueldo"
+                  required
+                  className="input-control"
+                  placeholder="Ej. 850000.00"
+                  value={formData.sueldo}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Usuario (Username) *</label>
+                <input
+                  type="text"
+                  name="username"
+                  required
+                  className="input-control"
+                  placeholder="Ej. lfernandez"
+                  value={formData.username}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  Contraseña {editingId ? '(Opcional)' : '*'}
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  required={!editingId}
+                  className="input-control"
+                  placeholder={editingId ? 'Dejar vacío para no cambiar' : 'Clave de acceso'}
+                  value={formData.password}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Rol en el Sistema *</label>
+                <select
+                  name="rol"
+                  required
+                  className="input-control"
+                  value={formData.rol}
+                  onChange={handleInputChange}
+                >
+                  <option value="VENDEDOR">VENDEDOR</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-dark-borderSubtle">
+              <Button
+                variant="secondary"
+                onClick={() => setShowModal(false)}
+                disabled={formLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={formLoading}
+              >
+                {editingId ? 'Guardar Cambios' : 'Registrar Empleado'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Diálogo de Confirmación para Baja */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={ejecutarBaja}
+        title="Dar de baja al empleado"
+        message={`¿Estás seguro de dar de baja lógica al empleado "${confirmState.nombre}"? No podrá acceder al sistema ni figurará en el listado activo.`}
+        confirmText="Confirmar Baja"
+        cancelText="Cancelar"
+        variant="danger"
+        loading={confirmState.loading}
+      />
     </div>
   );
 }

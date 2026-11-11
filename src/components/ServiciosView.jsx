@@ -23,6 +23,9 @@ import {
   CardContent,
   TableSkeleton,
   EmptyState,
+  Modal,
+  ConfirmDialog,
+  useToast,
 } from './ui';
 
 const TIPOS_SERVICIO = [
@@ -45,11 +48,14 @@ const INITIAL_FORM = {
 };
 
 export default function ServiciosView() {
+  const toast = useToast();
+
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState('');
@@ -57,10 +63,17 @@ export default function ServiciosView() {
 
   const [formData, setFormData] = useState(INITIAL_FORM);
 
+  // Estado del ConfirmDialog accesible
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    codigo: null,
+    nombre: '',
+    loading: false,
+  });
+
   const cargarServicios = async () => {
     try {
       setLoading(true);
-      setError(null);
       let url = '/api/servicios';
       const params = new URLSearchParams();
       if (!mostrarTodos) {
@@ -80,7 +93,7 @@ export default function ServiciosView() {
       const data = await res.json();
       setServicios(data);
     } catch (err) {
-      setError(err.message || 'No se pudieron cargar los servicios');
+      toast.error(err.message || 'No se pudieron cargar los servicios');
     } finally {
       setLoading(false);
     }
@@ -98,9 +111,8 @@ export default function ServiciosView() {
   const abrirNuevo = () => {
     setEditingId(null);
     setFormData(INITIAL_FORM);
-    setShowForm(!showForm);
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
+    setShowModal(true);
   };
 
   const abrirEdicion = (servicio) => {
@@ -113,17 +125,16 @@ export default function ServiciosView() {
       costoServicio: servicio.costoServicio || '',
       tipoServicio: servicio.tipoServicio || 'HOTEL'
     });
-    setShowForm(true);
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
+    setShowModal(true);
   };
 
   const handleGuardarServicio = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
 
     try {
+      setFormLoading(true);
       const isEdit = editingId !== null;
       const url = isEdit ? `/api/servicios/${editingId}` : '/api/servicios';
       const method = isEdit ? 'PUT' : 'POST';
@@ -142,54 +153,63 @@ export default function ServiciosView() {
         throw new Error(data.message || 'Error al guardar el servicio turístico');
       }
 
-      setSuccessMsg(
+      toast.success(
         isEdit
           ? `Servicio "${data.nombre}" actualizado correctamente.`
           : `¡Servicio "${data.nombre}" creado exitosamente con código #${data.codigoServicio}!`
       );
-      setShowForm(false);
+      setShowModal(false);
       setEditingId(null);
       setFormData(INITIAL_FORM);
       cargarServicios();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleBaja = async (codigo, nombre) => {
-    if (!window.confirm(`¿Estás seguro de dar de baja lógica el servicio "${nombre}" (#${codigo})?`)) return;
-    setError(null);
-    setSuccessMsg(null);
+  const solicitarBaja = (codigo, nombre) => {
+    setConfirmState({
+      isOpen: true,
+      codigo,
+      nombre,
+      loading: false,
+    });
+  };
+
+  const ejecutarBaja = async () => {
     try {
-      const res = await fetch(`/api/servicios/${codigo}`, { method: 'DELETE' });
+      setConfirmState(prev => ({ ...prev, loading: true }));
+      const res = await fetch(`/api/servicios/${confirmState.codigo}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.message || 'Error al dar de baja el servicio');
       }
-      setSuccessMsg(`Servicio "${nombre}" (#${codigo}) dado de baja lógica.`);
+      toast.success(`Servicio "${confirmState.nombre}" (#${confirmState.codigo}) dado de baja lógica.`);
+      setConfirmState({ isOpen: false, codigo: null, nombre: '', loading: false });
       cargarServicios();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+      setConfirmState(prev => ({ ...prev, loading: false }));
     }
   };
 
   const handleReactivar = async (codigo, nombre) => {
-    setError(null);
-    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/servicios/${codigo}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'Error al reactivar el servicio');
       }
-      setSuccessMsg(`Servicio "${nombre}" (#${codigo}) reactivado exitosamente.`);
+      toast.success(`Servicio "${nombre}" (#${codigo}) reactivado exitosamente.`);
       cargarServicios();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   };
 
-  // Filtrado local por término de búsqueda (nombre, destino, código)
   const serviciosFiltrados = servicios.filter(s => {
     if (!busqueda.trim()) return true;
     const q = busqueda.toLowerCase();
@@ -218,154 +238,145 @@ export default function ServiciosView() {
           onClick={abrirNuevo}
           leftIcon={<Plus size={16} />}
         >
-          {showForm ? 'Cerrar Formulario' : 'Nuevo Servicio'}
+          Nuevo Servicio
         </Button>
       </div>
 
-      {/* Alertas */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
-          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Atención requerida</span>
-            <span>{error}</span>
+      {/* Modal Accesible de Alta / Edición */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingId ? `Editar Servicio Turístico #${editingId}` : 'Registrar Nuevo Servicio Turístico'}
+        description="Complete los datos del itinerario. El costo debe ser mayor a cero y la fecha debe ser vigente."
+        size="lg"
+      >
+        <form onSubmit={handleGuardarServicio} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+              <AlertTriangle size={15} className="text-red-400 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre del Servicio *</label>
+              <input
+                type="text"
+                name="nombre"
+                required
+                className="input-control"
+                placeholder="Ej. Noche Hotel Costa Galana"
+                value={formData.nombre}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Tipo de Servicio *</label>
+              <select
+                name="tipoServicio"
+                required
+                className="input-control"
+                value={formData.tipoServicio}
+                onChange={handleInputChange}
+              >
+                {TIPOS_SERVICIO.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Destino *</label>
+              <input
+                type="text"
+                name="destinoServicio"
+                required
+                className="input-control"
+                placeholder="Ej. Mar del Plata"
+                value={formData.destinoServicio}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha del Servicio *</label>
+              <input
+                type="date"
+                name="fechaServicio"
+                required
+                min={editingId ? undefined : new Date().toISOString().split('T')[0]}
+                className="input-control"
+                value={formData.fechaServicio}
+                onChange={handleInputChange}
+              />
+              <span className="text-[11px] text-dark-muted mt-1 block">Debe ser igual o posterior a hoy (Decisión 1).</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Costo Oficial ($ ARS) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                name="costoServicio"
+                required
+                className="input-control"
+                placeholder="Ej. 45000.00"
+                value={formData.costoServicio}
+                onChange={handleInputChange}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">Descripción Breve</label>
+              <input
+                type="text"
+                name="descripcionBreve"
+                className="input-control"
+                placeholder="Ej. Habitación vista al mar con desayuno continental"
+                value={formData.descripcionBreve}
+                onChange={handleInputChange}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{successMsg}</span>
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-dark-borderSubtle mt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowModal(false)}
+              disabled={formLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={formLoading}
+            >
+              {editingId ? 'Guardar Cambios' : 'Registrar Servicio'}
+            </Button>
           </div>
-          <button
-            type="button"
-            onClick={() => setSuccessMsg(null)}
-            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {/* Formulario de Alta / Edición (Colapsable) */}
-      {showForm && (
-        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
-          <CardHeader>
-            <CardTitle>
-              {editingId ? `Editar Servicio Turístico #${editingId}` : 'Registrar Nuevo Servicio Turístico'}
-            </CardTitle>
-            <CardDescription>
-              Complete los datos del itinerario. El costo debe ser mayor a cero y la fecha debe ser vigente.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleGuardarServicio} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre del Servicio *</label>
-                  <input
-                    type="text"
-                    name="nombre"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Noche Hotel Costa Galana"
-                    value={formData.nombre}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Tipo de Servicio *</label>
-                  <select
-                    name="tipoServicio"
-                    required
-                    className="input-control"
-                    value={formData.tipoServicio}
-                    onChange={handleInputChange}
-                  >
-                    {TIPOS_SERVICIO.map(t => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Destino *</label>
-                  <input
-                    type="text"
-                    name="destinoServicio"
-                    required
-                    className="input-control"
-                    placeholder="Ej. Mar del Plata"
-                    value={formData.destinoServicio}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha del Servicio *</label>
-                  <input
-                    type="date"
-                    name="fechaServicio"
-                    required
-                    min={editingId ? undefined : new Date().toISOString().split('T')[0]}
-                    className="input-control"
-                    value={formData.fechaServicio}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Costo ($ ARS) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    name="costoServicio"
-                    required
-                    className="input-control"
-                    placeholder="Ej. 45000.00"
-                    value={formData.costoServicio}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Descripción Breve</label>
-                  <input
-                    type="text"
-                    name="descripcionBreve"
-                    className="input-control"
-                    placeholder="Ej. Habitación vista al mar con desayuno"
-                    value={formData.descripcionBreve}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
-                <Button
-                  variant="secondary"
-                  onClick={() => { setShowForm(false); setEditingId(null); }}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary">
-                  {editingId ? 'Guardar Cambios' : 'Registrar Servicio'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      {/* Diálogo de Confirmación Accesible para Bajas Lógicas */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={ejecutarBaja}
+        title="¿Dar de baja lógica al servicio?"
+        message={`¿Estás seguro de dar de baja lógica al servicio "${confirmState.nombre}" (#${confirmState.codigo})? No podrá venderse ni agregarse a nuevos paquetes mientras esté inactivo.`}
+        confirmText="Dar de Baja"
+        variant="danger"
+        loading={confirmState.loading}
+      />
 
       {/* Barra de Filtros y Búsqueda */}
       <Card>
         <div className="p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-            {/* Buscador */}
             <div className="relative flex-1 min-w-[220px]">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
               <input
@@ -377,7 +388,6 @@ export default function ServiciosView() {
               />
             </div>
 
-            {/* Selector de Tipo */}
             <div className="flex items-center gap-2">
               <Filter size={15} className="text-dark-muted shrink-0 hidden sm:block" />
               <select
@@ -394,7 +404,6 @@ export default function ServiciosView() {
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-dark-borderSubtle">
-            {/* Toggle de inactivos */}
             <label className="flex items-center gap-2 text-xs text-dark-muted hover:text-gray-200 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -405,7 +414,6 @@ export default function ServiciosView() {
               <span>Ver dados de baja</span>
             </label>
 
-            {/* Botón Refrescar */}
             <Button
               variant="outline"
               size="sm"
@@ -418,7 +426,7 @@ export default function ServiciosView() {
         </div>
       </Card>
 
-      {/* Contenedor de Listado (Tabla Desktop + Tarjetas Mobile) */}
+      {/* Contenedor de Listado */}
       <Card>
         {loading ? (
           <div className="overflow-x-auto">
@@ -527,7 +535,7 @@ export default function ServiciosView() {
                                 <Button
                                   variant="danger"
                                   size="sm"
-                                  onClick={() => handleBaja(s.codigoServicio, s.nombre)}
+                                  onClick={() => solicitarBaja(s.codigoServicio, s.nombre)}
                                   title="Dar de baja lógica"
                                 >
                                   <Trash2 size={13} />
@@ -552,7 +560,7 @@ export default function ServiciosView() {
               </table>
             </div>
 
-            {/* Vista en Tarjetas para Móviles (< 768px) */}
+            {/* Vista en Tarjetas para Móviles */}
             <div className="md:hidden divide-y divide-dark-borderSubtle">
               {serviciosFiltrados.map((s) => {
                 const isActivo = s.activo !== false;
@@ -601,7 +609,7 @@ export default function ServiciosView() {
                             <Button variant="secondary" size="sm" onClick={() => abrirEdicion(s)}>
                               <Edit2 size={12} className="mr-1" /> Editar
                             </Button>
-                            <Button variant="danger" size="sm" onClick={() => handleBaja(s.codigoServicio, s.nombre)}>
+                            <Button variant="danger" size="sm" onClick={() => solicitarBaja(s.codigoServicio, s.nombre)}>
                               <Trash2 size={13} />
                             </Button>
                           </>

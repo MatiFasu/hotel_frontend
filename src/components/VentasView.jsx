@@ -9,25 +9,24 @@ import {
   Briefcase,
   User,
   UserCheck,
-  DollarSign,
   Search,
   AlertTriangle,
   Receipt,
-  ArrowRight,
 } from 'lucide-react';
 import {
   Button,
   Badge,
   Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
   TableSkeleton,
   EmptyState,
+  Modal,
+  ConfirmDialog,
+  useToast,
 } from './ui';
 
 export default function VentasView({ sesion }) {
+  const toast = useToast();
+
   const [ventas, setVentas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [empleados, setEmpleados] = useState([]);
@@ -36,9 +35,9 @@ export default function VentasView({ sesion }) {
   const [mediosPago, setMediosPago] = useState([]);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
   // Filtros de listado
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -53,10 +52,16 @@ export default function VentasView({ sesion }) {
   const [servicioId, setServicioId] = useState('');
   const [paqueteId, setPaqueteId] = useState('');
 
+  // Estado del diálogo de confirmación para anulación
+  const [confirmAnulacion, setConfirmAnulacion] = useState({
+    isOpen: false,
+    numVenta: null,
+    loading: false,
+  });
+
   const cargarTodo = async () => {
     try {
       setLoading(true);
-      setError(null);
 
       let urlVentas = '/api/ventas';
       const params = new URLSearchParams();
@@ -102,7 +107,7 @@ export default function VentasView({ sesion }) {
       if (!servicioId && dataServicios.length > 0) setServicioId(String(dataServicios[0].codigoServicio));
       if (!paqueteId && dataPaquetes.length > 0) setPaqueteId(String(dataPaquetes[0].codigoPaquete));
     } catch (err) {
-      setError(err.message || 'Error al cargar el Punto de Venta');
+      toast.error(err.message || 'Error al cargar el Punto de Venta');
     } finally {
       setLoading(false);
     }
@@ -126,23 +131,27 @@ export default function VentasView({ sesion }) {
   const montoComisionPreview = (montoTotalPreview * tasaComisionPreview) / 100;
   const gananciaNetaPreview = montoTotalPreview - montoComisionPreview;
 
+  const abrirNuevaVenta = () => {
+    setFormError(null);
+    setShowModal(true);
+  };
+
   const handleEmitirVenta = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
+    setFormError(null);
 
     if (!clienteId || !empleadoId) {
-      setError('Debes seleccionar un cliente y un empleado vendedor válido.');
+      setFormError('Debes seleccionar un cliente y un empleado vendedor válido.');
       return;
     }
 
     if (modalidadProducto === 'SERVICIO' && !servicioId) {
-      setError('Debes seleccionar un servicio turístico.');
+      setFormError('Debes seleccionar un servicio turístico.');
       return;
     }
 
     if (modalidadProducto === 'PAQUETE' && !paqueteId) {
-      setError('Debes seleccionar un paquete turístico.');
+      setFormError('Debes seleccionar un paquete turístico.');
       return;
     }
 
@@ -155,6 +164,7 @@ export default function VentasView({ sesion }) {
     };
 
     try {
+      setFormLoading(true);
       const res = await fetch('/api/ventas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,28 +176,41 @@ export default function VentasView({ sesion }) {
         throw new Error(data.message || 'Error al procesar la venta');
       }
 
-      setSuccessMsg(`¡Venta #${data.numVenta} emitida exitosamente por $${parseFloat(data.montoTotal).toLocaleString('es-AR')}! Ganancia neta: $${parseFloat(data.gananciaNeta).toLocaleString('es-AR')}`);
-      setShowForm(false);
+      toast.success(
+        `¡Venta #${data.numVenta} emitida exitosamente por $${parseFloat(data.montoTotal).toLocaleString('es-AR')}! Ganancia neta: $${parseFloat(data.gananciaNeta).toLocaleString('es-AR')}`
+      );
+      setShowModal(false);
       cargarTodo();
     } catch (err) {
-      setError(err.message);
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleAnular = async (numVenta) => {
-    if (!window.confirm(`¿Estás seguro de anular la venta #${numVenta}? Esta acción revertirá el balance financiero (Decisión 9).`)) return;
-    setError(null);
-    setSuccessMsg(null);
+  const solicitarAnulacion = (numVenta) => {
+    setConfirmAnulacion({
+      isOpen: true,
+      numVenta,
+      loading: false,
+    });
+  };
+
+  const ejecutarAnulacion = async () => {
     try {
-      const res = await fetch(`/api/ventas/${numVenta}/anular`, { method: 'PATCH' });
+      setConfirmAnulacion(prev => ({ ...prev, loading: true }));
+      const res = await fetch(`/api/ventas/${confirmAnulacion.numVenta}/anular`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'Error al anular la venta');
       }
-      setSuccessMsg(`Venta #${numVenta} anulada correctamente.`);
+      toast.success(`Venta #${confirmAnulacion.numVenta} anulada correctamente.`);
+      setConfirmAnulacion({ isOpen: false, numVenta: null, loading: false });
       cargarTodo();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+      setConfirmAnulacion(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -219,225 +242,12 @@ export default function VentasView({ sesion }) {
         </div>
         <Button
           variant="primary"
-          onClick={() => setShowForm(!showForm)}
+          onClick={abrirNuevaVenta}
           leftIcon={<Plus size={16} />}
         >
-          {showForm ? 'Cerrar Punto de Venta' : 'Nueva Venta'}
+          Nueva Venta
         </Button>
       </div>
-
-      {/* Alertas */}
-      {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
-          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-semibold block mb-0.5">Atención requerida</span>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{successMsg}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSuccessMsg(null)}
-            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
-
-      {/* Formulario Punto de Venta */}
-      {showForm && (
-        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
-          <CardHeader>
-            <CardTitle>Emisión de Nueva Operación Comercial</CardTitle>
-            <CardDescription>
-              Seleccione la modalidad XOR (Servicio Individual o Paquete Turístico), cliente receptor y medio de pago.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleEmitirVenta} className="space-y-5">
-              {/* Selector XOR de Modalidad */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-2">
-                  Modalidad de Venta (Exclusión Mutua XOR) *
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div
-                    onClick={() => setModalidadProducto('SERVICIO')}
-                    className={`
-                      p-3.5 rounded-xl border cursor-pointer select-none transition-all flex items-center gap-3
-                      ${modalidadProducto === 'SERVICIO'
-                        ? 'bg-brand-600/15 border-brand-500 text-white shadow-sm'
-                        : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
-                      }
-                    `}
-                  >
-                    <div className={`p-2 rounded-lg ${modalidadProducto === 'SERVICIO' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
-                      <Compass size={18} />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold text-gray-100">Servicio Individual</h5>
-                      <p className="text-[11px] text-dark-muted">Costo regular de catálogo</p>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setModalidadProducto('PAQUETE')}
-                    className={`
-                      p-3.5 rounded-xl border cursor-pointer select-none transition-all flex items-center justify-between gap-3
-                      ${modalidadProducto === 'PAQUETE'
-                        ? 'bg-brand-600/15 border-brand-500 text-white shadow-sm'
-                        : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
-                      }
-                    `}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${modalidadProducto === 'PAQUETE' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
-                        <Briefcase size={18} />
-                      </div>
-                      <div>
-                        <h5 className="text-xs font-bold text-gray-100">Paquete Turístico</h5>
-                        <p className="text-[11px] text-dark-muted">Servicios combinados</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      10% OFF
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Selección de Producto */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-                  {modalidadProducto === 'SERVICIO' ? 'Seleccionar Servicio Turístico *' : 'Seleccionar Paquete Turístico *'}
-                </label>
-                {modalidadProducto === 'SERVICIO' ? (
-                  <select
-                    required
-                    className="input-control"
-                    value={servicioId}
-                    onChange={(e) => setServicioId(e.target.value)}
-                  >
-                    {servicios.map(s => (
-                      <option key={s.codigoServicio} value={s.codigoServicio}>
-                        #{s.codigoServicio} - {s.nombre} ({s.destinoServicio} - {s.fechaServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    required
-                    className="input-control"
-                    value={paqueteId}
-                    onChange={(e) => setPaqueteId(e.target.value)}
-                  >
-                    {paquetes.map(p => (
-                      <option key={p.codigoPaquete} value={p.codigoPaquete}>
-                        #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} servicios) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')} (10% OFF incluido)
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Cliente, Vendedor y Medio de Pago */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cliente Receptor *</label>
-                  <select
-                    required
-                    className="input-control"
-                    value={clienteId}
-                    onChange={(e) => setClienteId(e.target.value)}
-                  >
-                    {clientes.map(c => (
-                      <option key={c.idCliente} value={c.idCliente}>
-                        {c.nombre} {c.apellido} (DNI: {c.dni})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Vendedor Responsable *</label>
-                  <select
-                    required
-                    className="input-control"
-                    value={empleadoId}
-                    onChange={(e) => setEmpleadoId(e.target.value)}
-                  >
-                    {empleados.map(e => (
-                      <option key={e.idEmpleado} value={e.idEmpleado}>
-                        {e.nombre} {e.apellido} ({e.cargo})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Medio de Pago *</label>
-                  <select
-                    required
-                    className="input-control"
-                    value={medioPago}
-                    onChange={(e) => setMedioPago(e.target.value)}
-                  >
-                    {mediosPago.map(mp => (
-                      <option key={mp.codigo} value={mp.codigo}>
-                        {mp.descripcion} — Comisión: {mp.porcentajeComision}%
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Visor de Snapshot Financiero en Vivo */}
-              <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-500/30 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Monto Bruto Facturado</span>
-                  <span className="text-lg font-bold text-gray-100">
-                    ${montoTotalPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">
-                    Comisión Retenida ({medioSeleccionado.descripcion} {tasaComisionPreview}%)
-                  </span>
-                  <span className="text-lg font-bold text-amber-400">
-                    -${montoComisionPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Ganancia Neta para la Agencia</span>
-                  <span className="text-xl font-extrabold text-emerald-400">
-                    ${gananciaNetaPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
-                <Button variant="secondary" onClick={() => setShowForm(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary" leftIcon={<Receipt size={16} />}>
-                  Confirmar y Emitir Venta
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Barra de Filtros y Búsqueda */}
       <Card>
@@ -518,7 +328,7 @@ export default function VentasView({ sesion }) {
             title={busqueda || filtroEstado || filtroTipoProducto ? 'No se encontraron ventas para los filtros aplicados' : 'No hay ventas emitidas'}
             description={busqueda || filtroEstado || filtroTipoProducto ? 'Prueba ajustando los filtros de búsqueda.' : 'Emite la primera operación comercial con el botón superior.'}
             action={
-              <Button variant="primary" size="sm" onClick={() => setShowForm(true)} leftIcon={<Plus size={14} />}>
+              <Button variant="primary" size="sm" onClick={abrirNuevaVenta} leftIcon={<Plus size={14} />}>
                 Nueva Venta
               </Button>
             }
@@ -610,7 +420,7 @@ export default function VentasView({ sesion }) {
                             <Button
                               variant="danger"
                               size="sm"
-                              onClick={() => handleAnular(v.numVenta)}
+                              onClick={() => solicitarAnulacion(v.numVenta)}
                               leftIcon={<Ban size={12} />}
                             >
                               Anular
@@ -676,7 +486,7 @@ export default function VentasView({ sesion }) {
                       </div>
 
                       {isActiva ? (
-                        <Button variant="danger" size="sm" onClick={() => handleAnular(v.numVenta)} leftIcon={<Ban size={12} />}>
+                        <Button variant="danger" size="sm" onClick={() => solicitarAnulacion(v.numVenta)} leftIcon={<Ban size={12} />}>
                           Anular
                         </Button>
                       ) : (
@@ -690,6 +500,217 @@ export default function VentasView({ sesion }) {
           </>
         )}
       </Card>
+
+      {/* Modal Emisión de Venta */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title="Emisión de Nueva Operación Comercial"
+        description="Seleccione la modalidad XOR (Servicio Individual o Paquete Turístico), cliente receptor y medio de pago."
+        size="lg"
+      >
+        <form onSubmit={handleEmitirVenta} className="space-y-4">
+          {formError && (
+            <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5">
+              <AlertTriangle size={16} className="text-red-400 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          {/* Selector XOR de Modalidad */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+              Modalidad de Venta (Exclusión Mutua XOR) *
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div
+                onClick={() => setModalidadProducto('SERVICIO')}
+                className={`
+                  p-3 rounded-lg border cursor-pointer select-none transition-all flex items-center gap-2.5
+                  ${modalidadProducto === 'SERVICIO'
+                    ? 'bg-brand-600/20 border-brand-500 text-white shadow-sm ring-1 ring-brand-500/50'
+                    : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                  }
+                `}
+              >
+                <div className={`p-2 rounded-lg ${modalidadProducto === 'SERVICIO' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                  <Compass size={16} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-gray-100">Servicio Individual</h5>
+                  <p className="text-[11px] text-dark-muted">Costo regular de catálogo</p>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setModalidadProducto('PAQUETE')}
+                className={`
+                  p-3 rounded-lg border cursor-pointer select-none transition-all flex items-center justify-between gap-2.5
+                  ${modalidadProducto === 'PAQUETE'
+                    ? 'bg-brand-600/20 border-brand-500 text-white shadow-sm ring-1 ring-brand-500/50'
+                    : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                  }
+                `}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-lg ${modalidadProducto === 'PAQUETE' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                    <Briefcase size={16} />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-gray-100">Paquete Turístico</h5>
+                    <p className="text-[11px] text-dark-muted">Servicios combinados</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  10% OFF
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Selección de Producto */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">
+              {modalidadProducto === 'SERVICIO' ? 'Seleccionar Servicio Turístico *' : 'Seleccionar Paquete Turístico *'}
+            </label>
+            {modalidadProducto === 'SERVICIO' ? (
+              <select
+                required
+                className="input-control"
+                value={servicioId}
+                onChange={(e) => setServicioId(e.target.value)}
+              >
+                {servicios.map(s => (
+                  <option key={s.codigoServicio} value={s.codigoServicio}>
+                    #{s.codigoServicio} - {s.nombre} ({s.destinoServicio} - {s.fechaServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                required
+                className="input-control"
+                value={paqueteId}
+                onChange={(e) => setPaqueteId(e.target.value)}
+              >
+                {paquetes.map(p => (
+                  <option key={p.codigoPaquete} value={p.codigoPaquete}>
+                    #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} servicios) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')} (10% OFF)
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Cliente, Vendedor y Medio de Pago */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1">Cliente Receptor *</label>
+              <select
+                required
+                className="input-control"
+                value={clienteId}
+                onChange={(e) => setClienteId(e.target.value)}
+              >
+                {clientes.map(c => (
+                  <option key={c.idCliente} value={c.idCliente}>
+                    {c.nombre} {c.apellido} (DNI: {c.dni})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1">Vendedor Responsable *</label>
+              <select
+                required
+                className="input-control"
+                value={empleadoId}
+                onChange={(e) => setEmpleadoId(e.target.value)}
+              >
+                {empleados.map(e => (
+                  <option key={e.idEmpleado} value={e.idEmpleado}>
+                    {e.nombre} {e.apellido} ({e.cargo})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-300 mb-1">Medio de Pago *</label>
+              <select
+                required
+                className="input-control"
+                value={medioPago}
+                onChange={(e) => setMedioPago(e.target.value)}
+              >
+                {mediosPago.map(mp => (
+                  <option key={mp.codigo} value={mp.codigo}>
+                    {mp.descripcion} — Comisión: {mp.porcentajeComision}%
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Visor de Snapshot Financiero en Vivo */}
+          <div className="p-3.5 rounded-xl bg-brand-950/20 border border-brand-500/30 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Monto Bruto</span>
+              <span className="text-base font-bold text-gray-100">
+                ${montoTotalPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">
+                Comisión ({medioSeleccionado.descripcion} {tasaComisionPreview}%)
+              </span>
+              <span className="text-base font-bold text-amber-400">
+                -${montoComisionPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Ganancia Neta</span>
+              <span className="text-lg font-extrabold text-emerald-400">
+                ${gananciaNetaPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
+            <Button
+              variant="secondary"
+              onClick={() => setShowModal(false)}
+              disabled={formLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={formLoading}
+              leftIcon={<Receipt size={16} />}
+            >
+              Confirmar y Emitir Venta
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Diálogo de Confirmación para Anulación */}
+      <ConfirmDialog
+        isOpen={confirmAnulacion.isOpen}
+        onClose={() => setConfirmAnulacion(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={ejecutarAnulacion}
+        title="Anular Operación de Venta"
+        message={`¿Estás seguro de anular la venta #${confirmAnulacion.numVenta}? Esta acción revertirá el balance financiero y la venta quedará registrada como ANULADA irreversiblemente.`}
+        confirmText="Confirmar Anulación"
+        cancelText="Volver"
+        variant="danger"
+        loading={confirmAnulacion.loading}
+      />
     </div>
   );
 }
