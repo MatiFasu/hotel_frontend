@@ -1,5 +1,18 @@
 import React, { useState } from 'react';
-import { Compass, Lock, User, LogIn, AlertTriangle, Eye, EyeOff, KeyRound } from 'lucide-react';
+import {
+  Compass,
+  Lock,
+  User,
+  LogIn,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ShieldCheck,
+  UserCheck,
+  Sparkles,
+} from 'lucide-react';
+import { Button, Card, Badge } from './ui';
 
 export default function LoginView({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -41,87 +54,60 @@ export default function LoginView({ onLoginSuccess }) {
     }
   };
 
+  const prellenarCredencial = (user, pass) => {
+    setUsername(user);
+    setPassword(pass);
+    setError(null);
+  };
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '1.5rem'
-    }}>
-      <div className="glass-panel" style={{
-        width: '100%',
-        maxWidth: '440px',
-        padding: '2.25rem 2rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1.5rem',
-        borderRadius: 'var(--radius-md)',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.45)'
-      }}>
-        {/* Encabezado de Marca */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '0.6rem' }}>
-          <div style={{
-            width: '54px',
-            height: '54px',
-            borderRadius: '14px',
-            background: 'var(--accent-gradient)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 8px 20px rgba(59, 130, 246, 0.35)'
-          }}>
-            <Compass size={30} color="#fff" />
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-dark-bg relative overflow-hidden">
+      {/* Luces de fondo decorativas y sutiles */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-brand-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
+
+      <Card className="w-full max-w-md p-6 sm:p-8 space-y-6 shadow-2xl border-dark-borderSubtle relative z-10 animate-fade-in">
+        {/* Encabezado y Marca */}
+        <div className="flex flex-col items-center text-center space-y-2">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center text-white shadow-lg shadow-brand-600/30">
+            <Compass size={32} />
           </div>
-          <h1 style={{
-            fontSize: '1.5rem',
-            fontWeight: 800,
-            background: 'var(--accent-gradient)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            marginTop: '0.2rem'
-          }}>
-            HackaCode Turismo
-          </h1>
-          <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-            Acceso exclusivo para personal autorizado.<br />Ingresa tu usuario y contraseña para continuar.
-          </p>
+          <div className="space-y-1">
+            <div className="flex items-center justify-center gap-2">
+              <h1 className="text-2xl font-extrabold text-gray-100 tracking-tight">
+                HackaCode Turismo
+              </h1>
+              <Badge variant="brand" size="sm">Enterprise</Badge>
+            </div>
+            <p className="text-xs sm:text-sm text-dark-muted">
+              Plataforma de gestión operativa y comercial de viajes
+            </p>
+          </div>
         </div>
 
         {/* Alerta de Error */}
         {error && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid var(--accent-danger)',
-            color: '#f87171',
-            padding: '0.85rem 1rem',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.65rem',
-            fontSize: '0.88rem'
-          }}>
-            <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-            <span>{error}</span>
+          <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5 animate-slide-up">
+            <AlertTriangle size={16} className="text-red-400 shrink-0" />
+            <span className="flex-1">{error}</span>
           </div>
         )}
 
-        {/* Formulario de Inicio de Sesión */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
+        {/* Formulario de Login */}
+        <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
-            <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            <label className="block text-xs font-semibold text-gray-300 mb-1.5">
               Nombre de Usuario *
             </label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '0.85rem', pointerEvents: 'none' }} />
+            <div className="relative">
+              <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
               <input
                 type="text"
                 required
                 autoFocus
                 autoComplete="username"
-                className="input-control"
-                style={{ paddingLeft: '2.4rem' }}
-                placeholder="Ingresa tu usuario"
+                className="input-control pl-9 text-xs sm:text-sm"
+                placeholder="Ej. admin o vendedor"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -129,82 +115,74 @@ export default function LoginView({ onLoginSuccess }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-              Contraseña *
+            <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+              Contraseña de Acceso *
             </label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '0.85rem', pointerEvents: 'none' }} />
+            <div className="relative">
+              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
               <input
                 type={mostrarPassword ? 'text' : 'password'}
                 required
                 autoComplete="current-password"
-                className="input-control"
-                style={{ paddingLeft: '2.4rem', paddingRight: '2.5rem' }}
-                placeholder="Ingresa tu contraseña"
+                className="input-control pl-9 pr-10 text-xs sm:text-sm"
+                placeholder="Ingresa tu clave"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
               <button
                 type="button"
                 onClick={() => setMostrarPassword(!mostrarPassword)}
-                style={{
-                  position: 'absolute',
-                  right: '0.75rem',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: 0
-                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-muted hover:text-gray-200 p-1"
                 title={mostrarPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                tabIndex={-1}
               >
                 {mostrarPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={loading}
-            className="btn-primary"
-            style={{
-              marginTop: '0.35rem',
-              padding: '0.75rem',
-              fontSize: '0.95rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem'
-            }}
+            variant="primary"
+            loading={loading}
+            className="w-full py-2.5 text-sm font-bold shadow-md shadow-brand-600/20"
+            leftIcon={<LogIn size={16} />}
           >
-            <LogIn size={18} />
-            {loading ? 'Verificando credenciales...' : 'Iniciar Sesión'}
-          </button>
+            Iniciar Sesión
+          </Button>
         </form>
 
-        {/* Credenciales de Referencia para Evaluación */}
-        <div style={{
-          padding: '0.85rem 1rem',
-          borderRadius: 'var(--radius-sm)',
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          fontSize: '0.78rem',
-          color: 'var(--text-secondary)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.35rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            <KeyRound size={14} color="var(--accent-primary)" />
-            Credenciales de Evaluación (HackaCode):
+        {/* Accesos Rápidos de Demostración para Evaluadores */}
+        <div className="p-3.5 rounded-xl bg-dark-bg/80 border border-dark-borderSubtle text-left space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-200">
+            <KeyRound size={14} className="text-brand-400" />
+            <span>Acceso Rápido para Demostración / Portfolio:</span>
           </div>
-          <div>• Rol <strong>ADMIN</strong>: usuario <code>admin</code> / clave <code>Admin1234!</code></div>
-          <div>• Rol <strong>VENDEDOR</strong>: usuario <code>vendedor</code> / clave <code>Vendedor1234!</code></div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => prellenarCredencial('admin', 'Admin1234!')}
+              className="p-2 rounded-lg bg-dark-surface hover:bg-dark-elevated border border-dark-borderSubtle hover:border-brand-500/50 text-left transition-all group"
+            >
+              <div className="text-[11px] font-bold text-gray-200 group-hover:text-brand-300 flex items-center gap-1">
+                <ShieldCheck size={12} className="text-amber-400" /> Rol ADMIN
+              </div>
+              <div className="text-[10px] text-dark-muted mt-0.5">admin / Admin1234!</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => prellenarCredencial('vendedor', 'Vendedor1234!')}
+              className="p-2 rounded-lg bg-dark-surface hover:bg-dark-elevated border border-dark-borderSubtle hover:border-brand-500/50 text-left transition-all group"
+            >
+              <div className="text-[11px] font-bold text-gray-200 group-hover:text-brand-300 flex items-center gap-1">
+                <UserCheck size={12} className="text-brand-400" /> Rol VENDEDOR
+              </div>
+              <div className="text-[10px] text-dark-muted mt-0.5">vendedor / Vendedor1234!</div>
+            </button>
+          </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
