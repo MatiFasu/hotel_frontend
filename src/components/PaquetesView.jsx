@@ -11,6 +11,13 @@ import {
   Search,
   AlertTriangle,
   Package,
+  Eye,
+  X,
+  Sparkles,
+  Layers,
+  MapPin,
+  Calendar,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Button,
@@ -33,6 +40,7 @@ export default function PaquetesView() {
   const [formError, setFormError] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
+  const [paqueteDetalle, setPaqueteDetalle] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
@@ -40,6 +48,7 @@ export default function PaquetesView() {
   const [nombrePaquete, setNombrePaquete] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [filtroServicioModal, setFiltroServicioModal] = useState('');
+  const [tipoServicioFiltro, setTipoServicioFiltro] = useState('');
 
   const [confirmState, setConfirmState] = useState({
     isOpen: false,
@@ -91,6 +100,7 @@ export default function PaquetesView() {
     setNombrePaquete('');
     setSelectedIds([]);
     setFiltroServicioModal('');
+    setTipoServicioFiltro('');
     setFormError(null);
     setShowModal(true);
   };
@@ -100,6 +110,7 @@ export default function PaquetesView() {
     setNombrePaquete(paquete.nombre || '');
     setSelectedIds((paquete.servicios || []).map(s => s.codigoServicio));
     setFiltroServicioModal('');
+    setTipoServicioFiltro('');
     setFormError(null);
     setShowModal(true);
   };
@@ -110,6 +121,10 @@ export default function PaquetesView() {
         ? prev.filter(id => id !== codigoServicio)
         : [...prev, codigoServicio]
     );
+  };
+
+  const removerServicio = (codigoServicio) => {
+    setSelectedIds(prev => prev.filter(id => id !== codigoServicio));
   };
 
   // Cálculo dinámico en vivo (suma - 10% OFF con redondeo estándar)
@@ -219,7 +234,10 @@ export default function PaquetesView() {
     );
   });
 
+  const tiposServicioUnicos = [...new Set(serviciosActivos.map(s => s.tipoServicio).filter(Boolean))];
+
   const serviciosDisponiblesFiltrados = serviciosActivos.filter(s => {
+    if (tipoServicioFiltro && s.tipoServicio !== tipoServicioFiltro) return false;
     if (!filtroServicioModal.trim()) return true;
     const q = filtroServicioModal.toLowerCase();
     return (
@@ -238,12 +256,12 @@ export default function PaquetesView() {
             <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight">
               Paquetes Turísticos
             </h2>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              10% OFF Automático
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+              <Sparkles size={11} /> 10% OFF Normativo
             </span>
           </div>
           <p className="text-xs sm:text-sm text-dark-muted mt-1">
-            Combinaciones comerciales de 2 o más servicios con descuento automático garantizado por el sistema.
+            Combinaciones comerciales de 2 o más servicios con descuento del 10% calculado y garantizado por sistema.
           </p>
         </div>
         <Button
@@ -263,7 +281,7 @@ export default function PaquetesView() {
             <input
               type="text"
               className="input-control pl-9 text-xs"
-              placeholder="Buscar por nombre de paquete o servicio incluido..."
+              placeholder="Buscar por código, nombre o servicio incluido..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
             />
@@ -337,7 +355,7 @@ export default function PaquetesView() {
                     <th>Suma Base</th>
                     <th>Costo Paquete (-10%)</th>
                     <th>Estado</th>
-                    <th className="text-right w-36">Acciones</th>
+                    <th className="text-right w-44">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-borderSubtle">
@@ -398,6 +416,15 @@ export default function PaquetesView() {
                         </td>
                         <td className="text-right">
                           <div className="inline-flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setPaqueteDetalle(p)}
+                              title="Ver Itinerario y Servicios"
+                              leftIcon={<Eye size={12} />}
+                            >
+                              Detalle
+                            </Button>
                             {isActivo ? (
                               <>
                                 <Button
@@ -457,7 +484,7 @@ export default function PaquetesView() {
                         </div>
                         <h4 className="text-sm font-semibold text-gray-100 mt-1">{p.nombre}</h4>
                       </div>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                         10% OFF
                       </span>
                     </div>
@@ -484,7 +511,10 @@ export default function PaquetesView() {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="secondary" size="sm" onClick={() => setPaqueteDetalle(p)}>
+                          <Eye size={12} className="mr-1" /> Ver
+                        </Button>
                         {isActivo ? (
                           <>
                             <Button variant="secondary" size="sm" onClick={() => abrirEdicion(p)}>
@@ -509,12 +539,12 @@ export default function PaquetesView() {
         )}
       </Card>
 
-      {/* Modal Formulario Paquete Turístico */}
+      {/* Modal Formulario Armado de Paquete */}
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         title={editingId ? `Editar Paquete Turístico #${editingId}` : 'Armar Nuevo Paquete Turístico'}
-        description="Seleccione como mínimo 2 servicios turísticos. El descuento del 10% se calcula y aplica automáticamente."
+        description="Seleccione 2 o más servicios. El sistema calculará el 10% de ahorro normativo garantizado."
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -526,7 +556,7 @@ export default function PaquetesView() {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1">Nombre del Paquete *</label>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Nombre Comercial del Paquete *</label>
             <input
               type="text"
               required
@@ -537,26 +567,71 @@ export default function PaquetesView() {
             />
           </div>
 
-          {/* Selector de servicios con filtro */}
+          {/* Bandeja de Servicios Seleccionados */}
+          {selectedIds.length > 0 && (
+            <div className="p-3 rounded-lg bg-dark-bg/60 border border-brand-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-gray-200 flex items-center gap-1.5">
+                  <Layers size={13} className="text-brand-400" />
+                  Servicios Incluidos ({selectedIds.length}):
+                </span>
+                <span className="text-[10px] text-dark-muted">Clic en (x) para remover</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {serviciosSeleccionados.map(s => (
+                  <span
+                    key={s.codigoServicio}
+                    className="inline-flex items-center gap-1.5 text-xs py-1 px-2.5 rounded-md bg-brand-950/40 border border-brand-500/40 text-brand-200"
+                  >
+                    <span>{s.nombre} (${parseFloat(s.costoServicio).toLocaleString('es-AR')})</span>
+                    <button
+                      type="button"
+                      onClick={() => removerServicio(s.codigoServicio)}
+                      className="text-brand-300 hover:text-white"
+                      title="Quitar del paquete"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Catálogo para agregar servicios */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-gray-300">
-                Servicios a Incluir (Mínimo 2) *
+                Catálogo de Servicios Activos (Mínimo 2) *
               </label>
               <Badge variant={selectedIds.length >= 2 ? 'success' : 'warning'} size="sm">
-                {selectedIds.length} seleccionados
+                {selectedIds.length >= 2 ? 'Mínimo cumplido' : `Faltan ${2 - selectedIds.length} servicio(s)`}
               </Badge>
             </div>
 
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
-              <input
-                type="text"
-                className="input-control pl-8 text-xs py-1.5"
-                placeholder="Filtrar servicios por nombre, destino o tipo..."
-                value={filtroServicioModal}
-                onChange={(e) => setFiltroServicioModal(e.target.value)}
-              />
+            {/* Filtros rápidos dentro del modal */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="sm:col-span-2 relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
+                <input
+                  type="text"
+                  className="input-control pl-8 text-xs py-1.5"
+                  placeholder="Filtrar por nombre o destino..."
+                  value={filtroServicioModal}
+                  onChange={(e) => setFiltroServicioModal(e.target.value)}
+                />
+              </div>
+
+              <select
+                className="input-control text-xs py-1.5"
+                value={tipoServicioFiltro}
+                onChange={(e) => setTipoServicioFiltro(e.target.value)}
+              >
+                <option value="">Todos los Tipos</option>
+                {tiposServicioUnicos.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
 
             {serviciosActivos.length === 0 ? (
@@ -564,7 +639,7 @@ export default function PaquetesView() {
                 No hay servicios turísticos activos para combinar. Registre servicios primero.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1 border border-dark-borderSubtle rounded-lg bg-dark-bg/40">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1 border border-dark-borderSubtle rounded-lg bg-dark-bg/40">
                 {serviciosDisponiblesFiltrados.map(s => {
                   const isSelected = selectedIds.includes(s.codigoServicio);
                   return (
@@ -601,7 +676,7 @@ export default function PaquetesView() {
             )}
           </div>
 
-          {/* Previsualizador de Descuento del 10% */}
+          {/* Comparador de Ahorro y Descuento del 10% */}
           <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
@@ -610,14 +685,14 @@ export default function PaquetesView() {
               <div>
                 <h5 className="text-xs font-bold text-gray-100">Descuento del 10% OFF Normativo</h5>
                 <p className="text-[11px] text-dark-muted mt-0.5">
-                  Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · Ahorro: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  Suma regular: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · Ahorro garantizado: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                 </p>
               </div>
             </div>
 
             <div className="text-left sm:text-right">
-              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Costo Final</span>
-              <span className="text-lg font-extrabold text-emerald-400">
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Costo Final del Paquete</span>
+              <span className="text-xl font-extrabold text-emerald-400">
                 ${costoFinalConDescuento.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
               </span>
             </div>
@@ -642,6 +717,90 @@ export default function PaquetesView() {
           </div>
         </form>
       </Modal>
+
+      {/* Modal Dossier / Detalle del Paquete */}
+      {paqueteDetalle && (
+        <Modal
+          isOpen={true}
+          onClose={() => setPaqueteDetalle(null)}
+          title={`Detalle de Paquete #${paqueteDetalle.codigoPaquete}: ${paqueteDetalle.nombre}`}
+          description="Itinerario, servicios incluidos y ahorro comercial aplicado."
+          size="lg"
+        >
+          <div className="space-y-4 text-left">
+            {/* Header con resumen económico */}
+            <div className="p-4 rounded-xl bg-dark-bg/80 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={paqueteDetalle.activo !== false ? 'success' : 'danger'} size="sm" dot>
+                    {paqueteDetalle.activo !== false ? 'Activo para Ventas' : 'Dado de Baja'}
+                  </Badge>
+                  <span className="text-xs font-bold text-emerald-400">10% OFF Normativo Incluido</span>
+                </div>
+                <h4 className="text-base font-bold text-gray-100 mt-1">{paqueteDetalle.nombre}</h4>
+                <p className="text-xs text-dark-muted">
+                  Contiene {(paqueteDetalle.servicios || []).length} servicios turísticos combinados.
+                </p>
+              </div>
+
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Precio Final Comercial</span>
+                <span className="text-2xl font-extrabold text-emerald-400">
+                  ${parseFloat(paqueteDetalle.costoPaquete).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Lista detallada de servicios del paquete */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-gray-200 block">
+                Itinerario de Servicios Incluidos:
+              </span>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {(paqueteDetalle.servicios || []).map((s) => (
+                  <div
+                    key={s.codigoServicio}
+                    className="p-3 rounded-lg bg-dark-bg/60 border border-dark-borderSubtle flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="info" size="sm">{s.tipoServicio}</Badge>
+                        <span className="text-xs font-semibold text-gray-100 truncate">{s.nombre}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-dark-muted mt-1">
+                        <span className="flex items-center gap-1">
+                          <MapPin size={11} /> {s.destinoServicio}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar size={11} /> {s.fechaServicio}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] text-dark-muted block">Precio Regular</span>
+                      <span className="text-xs font-bold text-gray-200">
+                        ${parseFloat(s.costoServicio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end pt-3 border-t border-dark-borderSubtle">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPaqueteDetalle(null)}
+              >
+                Cerrar Detalle
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Diálogo de Confirmación para Baja */}
       <ConfirmDialog

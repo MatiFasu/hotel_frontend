@@ -12,6 +12,13 @@ import {
   Search,
   AlertTriangle,
   Receipt,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  FileText,
+  Clock,
+  ArrowRight,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Button,
@@ -39,6 +46,9 @@ export default function VentasView({ sesion }) {
   const [formError, setFormError] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  // Modal de Detalle / Comprobante
+  const [ventaDetalle, setVentaDetalle] = useState(null);
+
   // Filtros de listado
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipoProducto, setFiltroTipoProducto] = useState('');
@@ -46,6 +56,7 @@ export default function VentasView({ sesion }) {
 
   // Estado del formulario de Punto de Venta (XOR: SERVICIO o PAQUETE)
   const [modalidadProducto, setModalidadProducto] = useState('SERVICIO');
+  const [busquedaProducto, setBusquedaProducto] = useState('');
   const [clienteId, setClienteId] = useState('');
   const [empleadoId, setEmpleadoId] = useState('');
   const [medioPago, setMedioPago] = useState('EFECTIVO');
@@ -117,7 +128,7 @@ export default function VentasView({ sesion }) {
     cargarTodo();
   }, [filtroEstado, filtroTipoProducto]);
 
-  // Cálculo dinámico del snapshot financiero previo a emitir
+  // Selección de Producto actual
   const productoSeleccionado = modalidadProducto === 'SERVICIO'
     ? servicios.find(s => String(s.codigoServicio) === String(servicioId))
     : paquetes.find(p => String(p.codigoPaquete) === String(paqueteId));
@@ -133,6 +144,7 @@ export default function VentasView({ sesion }) {
 
   const abrirNuevaVenta = () => {
     setFormError(null);
+    setBusquedaProducto('');
     setShowModal(true);
   };
 
@@ -177,7 +189,7 @@ export default function VentasView({ sesion }) {
       }
 
       toast.success(
-        `¡Venta #${data.numVenta} emitida exitosamente por $${parseFloat(data.montoTotal).toLocaleString('es-AR')}! Ganancia neta: $${parseFloat(data.gananciaNeta).toLocaleString('es-AR')}`
+        `¡Venta #${data.numVenta} emitida exitosamente por $${parseFloat(data.montoTotal).toLocaleString('es-AR')}!`
       );
       setShowModal(false);
       cargarTodo();
@@ -207,10 +219,30 @@ export default function VentasView({ sesion }) {
       }
       toast.success(`Venta #${confirmAnulacion.numVenta} anulada correctamente.`);
       setConfirmAnulacion({ isOpen: false, numVenta: null, loading: false });
+
+      // Si el modal de detalle estaba abierto para esta venta, actualizarlo
+      if (ventaDetalle && ventaDetalle.numVenta === confirmAnulacion.numVenta) {
+        setVentaDetalle(prev => ({ ...prev, estado: 'ANULADA', fechaAnulacion: new Date().toISOString() }));
+      }
+
       cargarTodo();
     } catch (err) {
       toast.error(err.message);
       setConfirmAnulacion(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const abrirDetalle = async (v) => {
+    try {
+      const res = await fetch(`/api/ventas/${v.numVenta}`);
+      if (res.ok) {
+        const data = await res.json();
+        setVentaDetalle(data);
+      } else {
+        setVentaDetalle(v);
+      }
+    } catch (_) {
+      setVentaDetalle(v);
     }
   };
 
@@ -228,16 +260,30 @@ export default function VentasView({ sesion }) {
     );
   });
 
+  // Filtrado interno para el selector de productos en el modal de nueva venta
+  const serviciosOpcionesFiltradas = servicios.filter(s => {
+    if (!busquedaProducto.trim()) return true;
+    const q = busquedaProducto.toLowerCase();
+    return s.nombre?.toLowerCase().includes(q) || s.destinoServicio?.toLowerCase().includes(q) || s.tipoServicio?.toLowerCase().includes(q);
+  });
+
+  const paquetesOpcionesFiltradas = paquetes.filter(p => {
+    if (!busquedaProducto.trim()) return true;
+    const q = busquedaProducto.toLowerCase();
+    return p.nombre?.toLowerCase().includes(q);
+  });
+
   return (
     <div className="space-y-6 text-left">
       {/* Encabezado */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-dark-borderSubtle">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight">
-            Punto de Venta
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight flex items-center gap-2">
+            <span>Punto de Venta</span>
+            <Badge variant="brand" size="sm">Comercial</Badge>
           </h2>
           <p className="text-xs sm:text-sm text-dark-muted mt-1">
-            Registro transaccional con exclusión mutua XOR, snapshot financiero inmutable y comisiones por medio de pago.
+            Registro transaccional de operaciones turísticas, liquidación de comisiones bancarias y emisión de comprobantes.
           </p>
         </div>
         <Button
@@ -258,7 +304,7 @@ export default function VentasView({ sesion }) {
               <input
                 type="text"
                 className="input-control pl-9 text-xs"
-                placeholder="Buscar por cliente, DNI, vendedor o producto..."
+                placeholder="Buscar por comprobante, cliente, DNI, vendedor o producto..."
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
               />
@@ -281,8 +327,8 @@ export default function VentasView({ sesion }) {
                 onChange={(e) => setFiltroTipoProducto(e.target.value)}
               >
                 <option value="">Todas las Modalidades</option>
-                <option value="SERVICIO">Servicios</option>
-                <option value="PAQUETE">Paquetes</option>
+                <option value="SERVICIO">Servicios Individuales</option>
+                <option value="PAQUETE">Paquetes Turísticos</option>
               </select>
             </div>
           </div>
@@ -325,8 +371,8 @@ export default function VentasView({ sesion }) {
         ) : ventasFiltradas.length === 0 ? (
           <EmptyState
             icon={ShoppingBag}
-            title={busqueda || filtroEstado || filtroTipoProducto ? 'No se encontraron ventas para los filtros aplicados' : 'No hay ventas emitidas'}
-            description={busqueda || filtroEstado || filtroTipoProducto ? 'Prueba ajustando los filtros de búsqueda.' : 'Emite la primera operación comercial con el botón superior.'}
+            title={busqueda || filtroEstado || filtroTipoProducto ? 'No se encontraron operaciones' : 'No hay ventas emitidas'}
+            description={busqueda || filtroEstado || filtroTipoProducto ? 'Ajusta los filtros o la búsqueda ingresada.' : 'Emite la primera operación comercial con el botón superior.'}
             action={
               <Button variant="primary" size="sm" onClick={abrirNuevaVenta} leftIcon={<Plus size={14} />}>
                 Nueva Venta
@@ -349,7 +395,7 @@ export default function VentasView({ sesion }) {
                     <th>Comisión</th>
                     <th>Ganancia Neta</th>
                     <th>Estado</th>
-                    <th className="text-right w-28">Acciones</th>
+                    <th className="text-right w-36">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-borderSubtle">
@@ -416,18 +462,27 @@ export default function VentasView({ sesion }) {
                           )}
                         </td>
                         <td className="text-right">
-                          {isActiva ? (
+                          <div className="inline-flex items-center justify-end gap-1.5">
                             <Button
-                              variant="danger"
+                              variant="secondary"
                               size="sm"
-                              onClick={() => solicitarAnulacion(v.numVenta)}
-                              leftIcon={<Ban size={12} />}
+                              onClick={() => abrirDetalle(v)}
+                              title="Ver Comprobante"
+                              leftIcon={<Eye size={12} />}
                             >
-                              Anular
+                              Detalle
                             </Button>
-                          ) : (
-                            <span className="text-xs text-dark-muted">Anulada</span>
-                          )}
+                            {isActiva && (
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => solicitarAnulacion(v.numVenta)}
+                                title="Anular venta"
+                              >
+                                <Ban size={12} />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -485,13 +540,16 @@ export default function VentasView({ sesion }) {
                         </div>
                       </div>
 
-                      {isActiva ? (
-                        <Button variant="danger" size="sm" onClick={() => solicitarAnulacion(v.numVenta)} leftIcon={<Ban size={12} />}>
-                          Anular
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="secondary" size="sm" onClick={() => abrirDetalle(v)}>
+                          <Eye size={12} className="mr-1" /> Ver
                         </Button>
-                      ) : (
-                        <span className="text-xs text-dark-muted">Anulada</span>
-                      )}
+                        {isActiva && (
+                          <Button variant="danger" size="sm" onClick={() => solicitarAnulacion(v.numVenta)}>
+                            <Ban size={12} />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -501,15 +559,15 @@ export default function VentasView({ sesion }) {
         )}
       </Card>
 
-      {/* Modal Emisión de Venta */}
+      {/* Modal Emisión de Venta (Checkout / POS Flow) */}
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="Emisión de Nueva Operación Comercial"
-        description="Seleccione la modalidad XOR (Servicio Individual o Paquete Turístico), cliente receptor y medio de pago."
+        title="Emisión de Operación Comercial (Punto de Venta)"
+        description="Complete los pasos para emitir el comprobante con snapshot financiero inmutable."
         size="lg"
       >
-        <form onSubmit={handleEmitirVenta} className="space-y-4">
+        <form onSubmit={handleEmitirVenta} className="space-y-5">
           {formError && (
             <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5">
               <AlertTriangle size={16} className="text-red-400 shrink-0" />
@@ -517,62 +575,72 @@ export default function VentasView({ sesion }) {
             </div>
           )}
 
-          {/* Selector XOR de Modalidad */}
+          {/* Bloque 1: Modalidad XOR */}
           <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-              Modalidad de Venta (Exclusión Mutua XOR) *
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-200">
+                1. Selección de Producto (Exclusión Mutua XOR) *
+              </label>
+              <span className="text-[11px] text-dark-muted">Elija una modalidad</span>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div
                 onClick={() => setModalidadProducto('SERVICIO')}
                 className={`
-                  p-3 rounded-lg border cursor-pointer select-none transition-all flex items-center gap-2.5
+                  p-3 rounded-xl border cursor-pointer select-none transition-all flex items-center gap-3
                   ${modalidadProducto === 'SERVICIO'
                     ? 'bg-brand-600/20 border-brand-500 text-white shadow-sm ring-1 ring-brand-500/50'
                     : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
                   }
                 `}
               >
-                <div className={`p-2 rounded-lg ${modalidadProducto === 'SERVICIO' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
-                  <Compass size={16} />
+                <div className={`p-2.5 rounded-lg ${modalidadProducto === 'SERVICIO' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                  <Compass size={18} />
                 </div>
                 <div>
                   <h5 className="text-xs font-bold text-gray-100">Servicio Individual</h5>
-                  <p className="text-[11px] text-dark-muted">Costo regular de catálogo</p>
+                  <p className="text-[11px] text-dark-muted">Tarifa regular de catálogo</p>
                 </div>
               </div>
 
               <div
                 onClick={() => setModalidadProducto('PAQUETE')}
                 className={`
-                  p-3 rounded-lg border cursor-pointer select-none transition-all flex items-center justify-between gap-2.5
+                  p-3 rounded-xl border cursor-pointer select-none transition-all flex items-center justify-between gap-3
                   ${modalidadProducto === 'PAQUETE'
                     ? 'bg-brand-600/20 border-brand-500 text-white shadow-sm ring-1 ring-brand-500/50'
                     : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
                   }
                 `}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className={`p-2 rounded-lg ${modalidadProducto === 'PAQUETE' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
-                    <Briefcase size={16} />
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${modalidadProducto === 'PAQUETE' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                    <Briefcase size={18} />
                   </div>
                   <div>
                     <h5 className="text-xs font-bold text-gray-100">Paquete Turístico</h5>
                     <p className="text-[11px] text-dark-muted">Servicios combinados</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  10% OFF
-                </span>
+                <Badge variant="success" size="sm">10% OFF</Badge>
               </div>
             </div>
           </div>
 
-          {/* Selección de Producto */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1">
-              {modalidadProducto === 'SERVICIO' ? 'Seleccionar Servicio Turístico *' : 'Seleccionar Paquete Turístico *'}
-            </label>
+          {/* Selector de Producto */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
+              <input
+                type="text"
+                className="input-control pl-8 text-xs py-1.5"
+                placeholder={modalidadProducto === 'SERVICIO' ? "Buscar servicio por nombre, tipo o destino..." : "Buscar paquete por nombre..."}
+                value={busquedaProducto}
+                onChange={(e) => setBusquedaProducto(e.target.value)}
+              />
+            </div>
+
             {modalidadProducto === 'SERVICIO' ? (
               <select
                 required
@@ -580,11 +648,15 @@ export default function VentasView({ sesion }) {
                 value={servicioId}
                 onChange={(e) => setServicioId(e.target.value)}
               >
-                {servicios.map(s => (
-                  <option key={s.codigoServicio} value={s.codigoServicio}>
-                    #{s.codigoServicio} - {s.nombre} ({s.destinoServicio} - {s.fechaServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
-                  </option>
-                ))}
+                {serviciosOpcionesFiltradas.length === 0 ? (
+                  <option disabled value="">No se encontraron servicios</option>
+                ) : (
+                  serviciosOpcionesFiltradas.map(s => (
+                    <option key={s.codigoServicio} value={s.codigoServicio}>
+                      #{s.codigoServicio} - {s.nombre} ({s.tipoServicio} · {s.destinoServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
+                    </option>
+                  ))
+                )}
               </select>
             ) : (
               <select
@@ -593,87 +665,115 @@ export default function VentasView({ sesion }) {
                 value={paqueteId}
                 onChange={(e) => setPaqueteId(e.target.value)}
               >
-                {paquetes.map(p => (
-                  <option key={p.codigoPaquete} value={p.codigoPaquete}>
-                    #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} servicios) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')} (10% OFF)
-                  </option>
-                ))}
+                {paquetesOpcionesFiltradas.length === 0 ? (
+                  <option disabled value="">No se encontraron paquetes</option>
+                ) : (
+                  paquetesOpcionesFiltradas.map(p => (
+                    <option key={p.codigoPaquete} value={p.codigoPaquete}>
+                      #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} servicios incluidos) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')}
+                    </option>
+                  ))
+                )}
               </select>
             )}
           </div>
 
-          {/* Cliente, Vendedor y Medio de Pago */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-300 mb-1">Cliente Receptor *</label>
-              <select
-                required
-                className="input-control"
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value)}
-              >
-                {clientes.map(c => (
-                  <option key={c.idCliente} value={c.idCliente}>
-                    {c.nombre} {c.apellido} (DNI: {c.dni})
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Bloque 2: Cliente y Vendedor */}
+          <div>
+            <label className="text-xs font-semibold text-gray-200 block mb-1.5">
+              2. Partes Intervinientes *
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-dark-muted mb-1">Cliente Titular</label>
+                <select
+                  required
+                  className="input-control"
+                  value={clienteId}
+                  onChange={(e) => setClienteId(e.target.value)}
+                >
+                  {clientes.map(c => (
+                    <option key={c.idCliente} value={c.idCliente}>
+                      {c.nombre} {c.apellido} (DNI {c.dni})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-300 mb-1">Vendedor Responsable *</label>
-              <select
-                required
-                className="input-control"
-                value={empleadoId}
-                onChange={(e) => setEmpleadoId(e.target.value)}
-              >
-                {empleados.map(e => (
-                  <option key={e.idEmpleado} value={e.idEmpleado}>
-                    {e.nombre} {e.apellido} ({e.cargo})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-300 mb-1">Medio de Pago *</label>
-              <select
-                required
-                className="input-control"
-                value={medioPago}
-                onChange={(e) => setMedioPago(e.target.value)}
-              >
-                {mediosPago.map(mp => (
-                  <option key={mp.codigo} value={mp.codigo}>
-                    {mp.descripcion} — Comisión: {mp.porcentajeComision}%
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-[11px] font-medium text-dark-muted mb-1">Vendedor Asignado</label>
+                <select
+                  required
+                  className="input-control"
+                  value={empleadoId}
+                  onChange={(e) => setEmpleadoId(e.target.value)}
+                >
+                  {empleados.map(e => (
+                    <option key={e.idEmpleado} value={e.idEmpleado}>
+                      {e.nombre} {e.apellido} ({e.cargo})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Visor de Snapshot Financiero en Vivo */}
-          <div className="p-3.5 rounded-xl bg-brand-950/20 border border-brand-500/30 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Monto Bruto</span>
-              <span className="text-base font-bold text-gray-100">
+          {/* Bloque 3: Medio de Pago */}
+          <div>
+            <label className="text-xs font-semibold text-gray-200 block mb-1.5">
+              3. Forma de Pago y Liquidación *
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {mediosPago.map(mp => {
+                const isSelected = medioPago === mp.codigo;
+                return (
+                  <div
+                    key={mp.codigo}
+                    onClick={() => setMedioPago(mp.codigo)}
+                    className={`
+                      p-2.5 rounded-lg border cursor-pointer select-none transition-all text-center
+                      ${isSelected
+                        ? 'bg-brand-600/20 border-brand-500 text-gray-100 ring-1 ring-brand-500/50 font-semibold'
+                        : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600'
+                      }
+                    `}
+                  >
+                    <div className="text-xs truncate">{mp.descripcion}</div>
+                    <div className="text-[10px] text-amber-400 mt-0.5">
+                      {mp.porcentajeComision > 0 ? `Comisión: ${mp.porcentajeComision}%` : 'Sin Comisión'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Recibo / Liquidación Financiera en Vivo */}
+          <div className="p-4 rounded-xl bg-dark-bg/80 border border-brand-500/30 space-y-2">
+            <div className="flex items-center justify-between text-xs pb-2 border-b border-dark-borderSubtle">
+              <span className="text-gray-300 font-semibold flex items-center gap-1.5">
+                <Receipt size={14} className="text-brand-400" /> Resumen de Liquidación
+              </span>
+              <span className="text-dark-muted text-[11px]">Snapshot Inmutable</span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-gray-300">
+              <span>Monto Facturado al Cliente (Bruto):</span>
+              <span className="font-semibold text-gray-100">
                 ${montoTotalPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
               </span>
             </div>
 
-            <div>
-              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">
-                Comisión ({medioSeleccionado.descripcion} {tasaComisionPreview}%)
-              </span>
-              <span className="text-base font-bold text-amber-400">
+            <div className="flex items-center justify-between text-xs text-amber-400">
+              <span>Comisión Bancaria ({medioSeleccionado.descripcion} {tasaComisionPreview}%):</span>
+              <span>
                 -${montoComisionPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
               </span>
             </div>
 
-            <div>
-              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Ganancia Neta</span>
-              <span className="text-lg font-extrabold text-emerald-400">
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-dark-borderSubtle font-bold">
+              <span className="text-gray-100">Ganancia Neta para la Agencia:</span>
+              <span className="text-emerald-400 text-base">
                 ${gananciaNetaPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
               </span>
             </div>
@@ -693,11 +793,161 @@ export default function VentasView({ sesion }) {
               loading={formLoading}
               leftIcon={<Receipt size={16} />}
             >
-              Confirmar y Emitir Venta
+              Emitir Venta
             </Button>
           </div>
         </form>
       </Modal>
+
+      {/* Modal Comprobante / Detalle de Venta */}
+      {ventaDetalle && (
+        <Modal
+          isOpen={true}
+          onClose={() => setVentaDetalle(null)}
+          title={`Comprobante de Venta #${ventaDetalle.numVenta}`}
+          description={`Emitido el ${ventaDetalle.fechaVenta ? ventaDetalle.fechaVenta.replace('T', ' ').substring(0, 16) : '-'}`}
+          size="lg"
+        >
+          <div className="space-y-5 text-left">
+            {/* Banner de Estado */}
+            <div className={`p-4 rounded-xl border flex items-center justify-between gap-3 ${
+              ventaDetalle.estado === 'ACTIVA'
+                ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                : 'bg-red-950/20 border-red-500/30 text-red-300'
+            }`}>
+              <div className="flex items-center gap-3">
+                {ventaDetalle.estado === 'ACTIVA' ? (
+                  <CheckCircle2 size={24} className="text-emerald-400 shrink-0" />
+                ) : (
+                  <XCircle size={24} className="text-red-400 shrink-0" />
+                )}
+                <div>
+                  <h4 className="text-sm font-bold text-gray-100">
+                    Operación {ventaDetalle.estado === 'ACTIVA' ? 'Confirmada y Vigente' : 'Anulada'}
+                  </h4>
+                  <p className="text-xs text-dark-muted mt-0.5">
+                    {ventaDetalle.estado === 'ACTIVA'
+                      ? 'La venta impacta positivamente en el balance y métricas del período.'
+                      : `Anulada el ${ventaDetalle.fechaAnulacion ? ventaDetalle.fechaAnulacion.replace('T', ' ').substring(0, 16) : '-'}. Balances financieros revertidos.`
+                    }
+                  </p>
+                </div>
+              </div>
+              <Badge variant={ventaDetalle.estado === 'ACTIVA' ? 'success' : 'danger'} size="md">
+                {ventaDetalle.estado}
+              </Badge>
+            </div>
+
+            {/* Datos de Intervinientes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-dark-bg/60 border border-dark-borderSubtle">
+              <div>
+                <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block mb-1">
+                  Cliente Titular
+                </span>
+                <div className="font-semibold text-gray-100 text-sm">{ventaDetalle.clienteNombreCompleto}</div>
+                <div className="text-xs text-dark-muted mt-0.5">DNI: {ventaDetalle.clienteDni}</div>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block mb-1">
+                  Vendedor de la Agencia
+                </span>
+                <div className="font-semibold text-gray-100 text-sm">{ventaDetalle.empleadoNombreCompleto}</div>
+                <div className="text-xs text-dark-muted mt-0.5">Registrado por nómina comercial</div>
+              </div>
+            </div>
+
+            {/* Producto Contratado */}
+            <div className="p-4 rounded-xl bg-dark-bg/60 border border-dark-borderSubtle space-y-2">
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">
+                Producto o Servicio Contratado
+              </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-gray-100 text-sm flex items-center gap-2">
+                  <Badge variant={ventaDetalle.tipoProducto === 'PAQUETE' ? 'warning' : 'info'} size="sm">
+                    {ventaDetalle.tipoProducto}
+                  </Badge>
+                  <span>{ventaDetalle.tipoProducto === 'SERVICIO' ? ventaDetalle.servicioNombre : ventaDetalle.paqueteNombre}</span>
+                </div>
+                <span className="text-sm font-bold text-gray-100">
+                  ${parseFloat(ventaDetalle.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* Si es paquete y tiene servicios asociados en el detalle */}
+              {ventaDetalle.paqueteServicios && ventaDetalle.paqueteServicios.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-dark-borderSubtle space-y-1.5">
+                  <span className="text-[11px] text-dark-muted font-semibold block">Servicios incluidos en el paquete:</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {ventaDetalle.paqueteServicios.map((s, idx) => (
+                      <div key={idx} className="p-2 rounded bg-dark-surface border border-dark-borderSubtle text-xs text-gray-300 flex items-center justify-between">
+                        <span>{s.nombre}</span>
+                        <span className="text-emerald-400 font-medium">${parseFloat(s.costoServicio).toLocaleString('es-AR')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Desglose Contable */}
+            <div className="p-4 rounded-xl bg-dark-bg/80 border border-brand-500/30 space-y-2">
+              <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block pb-1 border-b border-dark-borderSubtle">
+                Liquidación Contable
+              </span>
+              <div className="flex items-center justify-between text-xs text-gray-300">
+                <span>Forma de Pago:</span>
+                <span className="font-semibold text-gray-200">{ventaDetalle.medioPago}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-300">
+                <span>Monto Bruto Facturado:</span>
+                <span className="font-semibold text-gray-100">
+                  ${parseFloat(ventaDetalle.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-amber-400">
+                <span>Comisión Deducida ({parseFloat(ventaDetalle.porcentajeComision).toFixed(2)}%):</span>
+                <span>
+                  -${parseFloat(ventaDetalle.montoComision).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-dark-borderSubtle font-bold">
+                <span className="text-gray-100">Ganancia Neta Percibida:</span>
+                <span className="text-emerald-400 text-base">
+                  ${parseFloat(ventaDetalle.gananciaNeta).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Acciones del Comprobante */}
+            <div className="flex items-center justify-between pt-3 border-t border-dark-borderSubtle">
+              {ventaDetalle.estado === 'ACTIVA' ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => solicitarAnulacion(ventaDetalle.numVenta)}
+                  leftIcon={<Ban size={14} />}
+                >
+                  Anular Esta Venta
+                </Button>
+              ) : (
+                <div className="text-xs text-red-400 flex items-center gap-1.5">
+                  <ShieldAlert size={14} />
+                  <span>Operación no editable (ANULADA)</span>
+                </div>
+              )}
+
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setVentaDetalle(null)}
+              >
+                Cerrar Comprobante
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Diálogo de Confirmación para Anulación */}
       <ConfirmDialog
