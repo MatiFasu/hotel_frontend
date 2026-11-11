@@ -1,5 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle, AlertTriangle, RefreshCw, Trash2, Edit2, Search, Shield, Eye, EyeOff, Lock, Briefcase } from 'lucide-react';
+import {
+  Plus,
+  RefreshCw,
+  Trash2,
+  Edit2,
+  Search,
+  Shield,
+  Eye,
+  EyeOff,
+  Lock,
+  Briefcase,
+  Mail,
+  Phone,
+  AlertTriangle,
+  UserCheck,
+} from 'lucide-react';
+import {
+  Button,
+  Badge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  TableSkeleton,
+  EmptyState,
+} from './ui';
 
 const INITIAL_FORM = {
   nombre: '',
@@ -108,9 +134,11 @@ export default function EmpleadosView({ sesion }) {
     setError(null);
     setSuccessMsg(null);
     try {
-      // Consultar detalle como ADMIN para precargar el sueldo actual
       const res = await fetch(`/api/empleados/${emp.idEmpleado}`, {
-        headers: { 'X-User-Role': 'ADMIN' }
+        headers: {
+          'X-User-Role': 'ADMIN',
+          ...(sesion?.token ? { Authorization: `Bearer ${sesion.token}` } : {})
+        }
       });
       const detalle = res.ok ? await res.json() : emp;
       setEditingId(emp.idEmpleado);
@@ -205,7 +233,6 @@ export default function EmpleadosView({ sesion }) {
       setShowForm(false);
       setEditingId(null);
       setFormData(INITIAL_FORM);
-      setSueldosRevelados({});
       cargarEmpleados();
     } catch (err) {
       setError(err.message);
@@ -241,321 +268,456 @@ export default function EmpleadosView({ sesion }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="space-y-6 text-left">
       {/* Encabezado */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-dark-borderSubtle">
         <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Gestión de Empleados</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            Administración de personal, credenciales, roles y protección de remuneración salarial (Decisión 17).
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight">
+              Gestión de Personal
+            </h2>
+            <Badge variant={esAdmin ? 'warning' : 'info'} size="sm">
+              {rolUsuario}
+            </Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-dark-muted mt-1">
+            Nómina de empleados con control de credenciales, roles y protección salarial (Decisión 17).
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          {/* Indicador de Rol autenticado (Decisión 17) */}
-          <div className="glass-panel" style={{ padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)' }}>
-            <Shield size={16} color={esAdmin ? 'var(--accent-success)' : 'var(--accent-warning)'} />
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Nivel de Acceso:</span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: esAdmin ? 'var(--accent-success)' : '#fbbf24' }}>
-              {rolUsuario} — {esAdmin ? 'Visualización de Sueldos Habilitada' : 'Sueldos Confidenciales'}
-            </span>
-          </div>
-
+        <div className="flex items-center gap-3">
           {esAdmin && (
-            <button className="btn-primary" onClick={abrirNuevo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Plus size={18} />
+            <Button
+              variant="primary"
+              onClick={abrirNuevo}
+              leftIcon={<Plus size={16} />}
+            >
               {showForm ? 'Cerrar Formulario' : 'Nuevo Empleado'}
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Alertas */}
       {error && (
-        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--accent-danger)', color: '#f87171', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <AlertTriangle size={20} />
-          <span>{error}</span>
+        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
+          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold block mb-0.5">Atención requerida</span>
+            <span>{error}</span>
+          </div>
         </div>
       )}
 
       {successMsg && (
-        <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--accent-success)', color: '#34d399', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <CheckCircle size={20} />
-          <span>{successMsg}</span>
+        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessMsg(null)}
+            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
+          >
+            Cerrar
+          </button>
         </div>
       )}
 
-      {/* Formulario Alta / Edición */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="glass-panel" style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
-            {editingId ? `Editar Empleado #${editingId}` : 'Registrar Nuevo Empleado (o Reactivar por DNI)'}
-          </h3>
+      {/* Formulario Alta / Edición (Solo para ADMIN) */}
+      {showForm && esAdmin && (
+        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
+          <CardHeader>
+            <CardTitle>
+              {editingId ? `Editar Empleado #${editingId}` : 'Registrar Nuevo Empleado (o Reactivar por DNI)'}
+            </CardTitle>
+            <CardDescription>
+              El sueldo debe ser mayor a cero. Los DNI dados de baja se reactivan automáticamente.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre *</label>
+                  <input type="text" name="nombre" required className="input-control" placeholder="Ej. Lucía" value={formData.nombre} onChange={handleInputChange} />
+                </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Nombre *</label>
-              <input type="text" name="nombre" required className="input-control" placeholder="Ej. Lucía" value={formData.nombre} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Apellido *</label>
+                  <input type="text" name="apellido" required className="input-control" placeholder="Ej. Fernández" value={formData.apellido} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Apellido *</label>
-              <input type="text" name="apellido" required className="input-control" placeholder="Ej. Fernández" value={formData.apellido} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">DNI *</label>
+                  <input type="text" name="dni" required className="input-control" placeholder="Ej. 29888777" value={formData.dni} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>DNI *</label>
-              <input type="text" name="dni" required className="input-control" placeholder="Ej. 29888777" value={formData.dni} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Fecha de Nacimiento *</label>
+                  <input type="date" name="fechaNac" required className="input-control" value={formData.fechaNac} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Fecha de Nacimiento *</label>
-              <input type="date" name="fechaNac" required className="input-control" value={formData.fechaNac} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nacionalidad *</label>
+                  <input type="text" name="nacionalidad" required className="input-control" placeholder="Ej. Argentina" value={formData.nacionalidad} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Nacionalidad *</label>
-              <input type="text" name="nacionalidad" required className="input-control" placeholder="Ej. Argentina" value={formData.nacionalidad} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Dirección *</label>
+                  <input type="text" name="direccion" required className="input-control" placeholder="Ej. Av. Santa Fe 1500" value={formData.direccion} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Dirección *</label>
-              <input type="text" name="direccion" required className="input-control" placeholder="Ej. Av. Santa Fe 1500" value={formData.direccion} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Celular *</label>
+                  <input type="text" name="celular" required className="input-control" placeholder="Ej. +54 9 11 5566-7788" value={formData.celular} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Celular *</label>
-              <input type="text" name="celular" required className="input-control" placeholder="Ej. +54 9 11 5566-7788" value={formData.celular} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email *</label>
+                  <input type="email" name="email" required className="input-control" placeholder="Ej. lucia@agencia.com" value={formData.email} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Email *</label>
-              <input type="email" name="email" required className="input-control" placeholder="Ej. lucia@agencia.com" value={formData.email} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cargo *</label>
+                  <input type="text" name="cargo" required className="input-control" placeholder="Ej. Ejecutiva de Ventas" value={formData.cargo} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Cargo *</label>
-              <input type="text" name="cargo" required className="input-control" placeholder="Ej. Ejecutiva de Ventas" value={formData.cargo} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Sueldo Mensual ($ ARS) *</label>
+                  <input type="number" step="0.01" min="0.01" name="sueldo" required className="input-control" placeholder="Ej. 850000.00" value={formData.sueldo} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sueldo Mensual ($ ARS) *</label>
-              <input type="number" step="0.01" min="0.01" name="sueldo" required className="input-control" placeholder="Ej. 850000.00" value={formData.sueldo} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Usuario (Username) *</label>
+                  <input type="text" name="username" required className="input-control" placeholder="Ej. lfernandez" value={formData.username} onChange={handleInputChange} />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Usuario (Username) *</label>
-              <input type="text" name="username" required className="input-control" placeholder="Ej. lfernandez" value={formData.username} onChange={handleInputChange} />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                    Contraseña {editingId ? '(Opcional)' : '*'}
+                  </label>
+                  <input
+                    type="password"
+                    name="password"
+                    required={!editingId}
+                    className="input-control"
+                    placeholder={editingId ? 'Dejar en blanco para mantener' : 'Contraseña de acceso'}
+                    value={formData.password}
+                    onChange={handleInputChange}
+                  />
+                </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Contraseña {editingId ? '(Opcional al editar)' : '*'}
-              </label>
-              <input
-                type="password"
-                name="password"
-                required={!editingId}
-                className="input-control"
-                placeholder={editingId ? 'Dejar en blanco para mantener' : 'Contraseña de acceso'}
-                value={formData.password}
-                onChange={handleInputChange}
-              />
-            </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Rol en el Sistema *</label>
+                  <select name="rol" required className="input-control" value={formData.rol} onChange={handleInputChange}>
+                    <option value="VENDEDOR">VENDEDOR</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                </div>
+              </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Rol del Sistema *</label>
-              <select name="rol" required className="input-control" value={formData.rol} onChange={handleInputChange}>
-                <option value="VENDEDOR">VENDEDOR</option>
-                <option value="ADMIN">ADMIN</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button type="button" className="btn-secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary">
-              {editingId ? 'Guardar Cambios' : 'Registrar Empleado'}
-            </button>
-          </div>
-        </form>
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
+                <Button variant="secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>
+                  Cancelar
+                </Button>
+                <Button type="submit" variant="primary">
+                  {editingId ? 'Guardar Cambios' : 'Registrar Empleado'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {/* Filtros y Búsqueda */}
-      <div className="glass-panel" style={{ padding: '1rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 260px', maxWidth: '400px' }}>
-          <Search size={16} color="var(--text-secondary)" />
-          <input
-            type="text"
-            className="input-control"
-            style={{ padding: '0.45rem 0.8rem' }}
-            placeholder="Buscar por DNI, nombre, apellido o cargo..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
-        </div>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-          <input
-            type="checkbox"
-            checked={mostrarTodos}
-            onChange={(e) => setMostrarTodos(e.target.checked)}
-          />
-          Mostrar también inactivos (dados de baja)
-        </label>
-
-        <button className="btn-secondary" onClick={cargarEmpleados} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem' }}>
-          <RefreshCw size={15} />
-          Actualizar
-        </button>
-      </div>
-
-      {/* Tabla de Empleados */}
-      <div className="glass-panel" style={{ overflowX: 'auto' }}>
-        {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Cargando nómina de empleados...</div>
-        ) : empleados.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No hay empleados registrados en este filtro. ¡Registra el primero con el botón superior!
+      <Card>
+        <div className="p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
+            <input
+              type="text"
+              className="input-control pl-9 text-xs"
+              placeholder="Buscar por DNI, nombre, apellido o cargo..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
           </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-4">
+            <label className="flex items-center gap-2 text-xs text-dark-muted hover:text-gray-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={mostrarTodos}
+                onChange={(e) => setMostrarTodos(e.target.checked)}
+                className="rounded border-dark-border bg-dark-surface text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span>Ver dados de baja</span>
+            </label>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={cargarEmpleados}
+              leftIcon={<RefreshCw size={13} className={loading ? 'animate-spin' : ''} />}
+            >
+              <span className="hidden sm:inline">Actualizar</span>
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Contenedor de Listado */}
+      <Card>
+        {loading ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Empleado</th>
+                  <th>DNI</th>
+                  <th>Cargo</th>
+                  <th>Usuario / Rol</th>
+                  <th>Remuneración</th>
+                  <th>Estado</th>
+                  <th className="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <TableSkeleton rows={5} cols={8} />
+              </tbody>
+            </table>
+          </div>
+        ) : empleados.length === 0 ? (
+          <EmptyState
+            icon={UserCheck}
+            title={busqueda ? 'No se encontraron empleados' : 'No hay empleados registrados'}
+            description={busqueda ? 'Prueba con otro término de búsqueda o DNI.' : 'Comienza registrando al personal de la agencia.'}
+            action={
+              esAdmin ? (
+                <Button variant="primary" size="sm" onClick={abrirNuevo} leftIcon={<Plus size={14} />}>
+                  Registrar Empleado
+                </Button>
+              ) : null
+            }
+          />
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Empleado</th>
-                <th>DNI</th>
-                <th>Cargo</th>
-                <th>Usuario / Rol</th>
-                <th>Remuneración (Sueldo)</th>
-                <th>Estado</th>
-                <th style={{ textAlign: 'right' }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            {/* Tabla Desktop */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="w-16">ID</th>
+                    <th>Empleado</th>
+                    <th>DNI</th>
+                    <th>Cargo</th>
+                    <th>Usuario / Rol</th>
+                    <th>Remuneración (Sueldo)</th>
+                    <th>Estado</th>
+                    <th className="text-right w-36">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-borderSubtle">
+                  {empleados.map((emp) => {
+                    const isActivo = emp.activo !== false;
+                    const nombreCompleto = `${emp.nombre} ${emp.apellido}`;
+                    const sueldoRevelado = sueldosRevelados[emp.idEmpleado];
+                    return (
+                      <tr
+                        key={emp.idEmpleado}
+                        className={`transition-colors hover:bg-dark-elevated/40 ${!isActivo ? 'opacity-60 bg-red-950/5' : ''}`}
+                      >
+                        <td className="font-semibold text-brand-400">
+                          #{emp.idEmpleado}
+                        </td>
+                        <td>
+                          <div className="font-semibold text-gray-100">{nombreCompleto}</div>
+                          <div className="text-xs text-dark-muted mt-0.5">{emp.email} · {emp.celular}</div>
+                        </td>
+                        <td>
+                          <Badge variant="neutral" size="sm">
+                            {emp.dni}
+                          </Badge>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                            <Briefcase size={13} className="text-dark-muted" />
+                            <span>{emp.cargo}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="text-xs font-semibold text-gray-200">@{emp.username}</div>
+                          <div className="mt-0.5">
+                            <Badge variant={emp.rol === 'ADMIN' ? 'warning' : 'info'} size="sm">
+                              {emp.rol}
+                            </Badge>
+                          </div>
+                        </td>
+                        <td>
+                          {esAdmin ? (
+                            sueldoRevelado !== undefined ? (
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-emerald-400 text-sm">
+                                  ${parseFloat(sueldoRevelado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOcultarSueldo(emp.idEmpleado)}
+                                  title="Ocultar sueldo"
+                                  className="text-xs p-1"
+                                >
+                                  <EyeOff size={13} />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-dark-muted tracking-wider">••••••••</span>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleConsultarSueldo(emp.idEmpleado)}
+                                  leftIcon={<Eye size={12} />}
+                                >
+                                  Ver Sueldo
+                                </Button>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-dark-muted">
+                              <Lock size={12} className="text-red-400" />
+                              <span>Confidencial (Solo Admin)</span>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <Badge variant={isActivo ? 'success' : 'danger'} size="sm" dot>
+                            {isActivo ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          {esAdmin ? (
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              {isActivo ? (
+                                <>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => abrirEdicion(emp)}
+                                    leftIcon={<Edit2 size={12} />}
+                                  >
+                                    Editar
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}
+                                    title="Dar de baja lógica"
+                                  >
+                                    <Trash2 size={13} />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="success"
+                                  size="sm"
+                                  onClick={() => handleReactivar(emp.idEmpleado, nombreCompleto)}
+                                  leftIcon={<RefreshCw size={12} />}
+                                >
+                                  Reactivar
+                                </Button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-dark-muted">Solo Lectura</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Vista en Tarjetas para Móviles */}
+            <div className="md:hidden divide-y divide-dark-borderSubtle">
               {empleados.map((emp) => {
                 const isActivo = emp.activo !== false;
                 const nombreCompleto = `${emp.nombre} ${emp.apellido}`;
                 const sueldoRevelado = sueldosRevelados[emp.idEmpleado];
                 return (
-                  <tr key={emp.idEmpleado} style={{ opacity: isActivo ? 1 : 0.6 }}>
-                    <td style={{ fontWeight: 600 }}>#{emp.idEmpleado}</td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{nombreCompleto}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{emp.email} · {emp.celular}</div>
-                    </td>
-                    <td>
-                      <span className="badge badge-type">{emp.dni}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <Briefcase size={14} color="var(--text-secondary)" />
-                        {emp.cargo}
+                  <div key={emp.idEmpleado} className={`p-4 space-y-3 ${!isActivo ? 'opacity-70 bg-red-950/10' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-brand-400">#{emp.idEmpleado}</span>
+                          <Badge variant={isActivo ? 'success' : 'danger'} size="sm" dot>
+                            {isActivo ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </div>
+                        <h4 className="text-sm font-semibold text-gray-100 mt-1">{nombreCompleto}</h4>
+                        <div className="flex items-center gap-1.5 text-xs text-dark-muted mt-0.5">
+                          <Briefcase size={12} />
+                          <span>{emp.cargo} · @{emp.username}</span>
+                        </div>
                       </div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>@{emp.username}</div>
-                      <span
-                        className="badge"
-                        style={{
-                          marginTop: '0.2rem',
-                          background: emp.rol === 'ADMIN' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(99, 102, 241, 0.2)',
-                          color: emp.rol === 'ADMIN' ? '#fbbf24' : '#a5b4fc',
-                          border: emp.rol === 'ADMIN' ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(99, 102, 241, 0.3)'
-                        }}
-                      >
+                      <Badge variant={emp.rol === 'ADMIN' ? 'warning' : 'info'} size="sm">
                         {emp.rol}
-                      </span>
-                    </td>
-                    <td>
+                      </Badge>
+                    </div>
+
+                    {/* Fila Remuneración en Mobile */}
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-dark-bg/60 border border-dark-borderSubtle">
+                      <span className="text-xs text-dark-muted">Remuneración:</span>
                       {esAdmin ? (
                         sueldoRevelado !== undefined ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>
-                              ${parseFloat(sueldoRevelado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </span>
-                            <button
-                              className="btn-secondary"
-                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                              onClick={() => handleOcultarSueldo(emp.idEmpleado)}
-                              title="Ocultar sueldo"
-                            >
-                              <EyeOff size={12} /> Ocultar
-                            </button>
-                          </div>
+                          <span className="text-sm font-bold text-emerald-400">
+                            ${parseFloat(sueldoRevelado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                          </span>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>••••••••</span>
-                            <button
-                              className="btn-secondary"
-                              style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                              onClick={() => handleConsultarSueldo(emp.idEmpleado)}
-                              title="Ver sueldo del empleado"
-                            >
-                              <Eye size={12} /> Ver Sueldo
-                            </button>
-                          </div>
+                          <Button variant="secondary" size="sm" onClick={() => handleConsultarSueldo(emp.idEmpleado)}>
+                            <Eye size={12} className="mr-1" /> Ver Sueldo
+                          </Button>
                         )
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <Lock size={13} color="#f87171" />
-                          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                            Confidencial (Solo Admin)
-                          </span>
-                        </div>
+                        <span className="text-xs text-dark-muted flex items-center gap-1">
+                          <Lock size={11} className="text-red-400" /> Confidencial
+                        </span>
                       )}
-                    </td>
-                    <td>
-                      <span className={`badge ${isActivo ? 'badge-active' : 'badge-inactive'}`}>
-                        {isActivo ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {esAdmin ? (
-                        <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs text-dark-muted">DNI {emp.dni}</span>
+
+                      {esAdmin && (
+                        <div className="flex items-center gap-2">
                           {isActivo ? (
                             <>
-                              <button
-                                className="btn-secondary"
-                                style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                                onClick={() => abrirEdicion(emp)}
-                              >
-                                <Edit2 size={13} />
-                                Editar
-                              </button>
-                              <button
-                                className="btn-danger"
-                                onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                              >
-                                <Trash2 size={14} />
-                                Dar de Baja
-                              </button>
+                              <Button variant="secondary" size="sm" onClick={() => abrirEdicion(emp)}>
+                                <Edit2 size={12} className="mr-1" /> Editar
+                              </Button>
+                              <Button variant="danger" size="sm" onClick={() => handleBaja(emp.idEmpleado, nombreCompleto)}>
+                                <Trash2 size={13} />
+                              </Button>
                             </>
                           ) : (
-                            <button
-                              className="btn-success"
-                              onClick={() => handleReactivar(emp.idEmpleado, nombreCompleto)}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                            >
-                              <RefreshCw size={14} />
-                              Reactivar
-                            </button>
+                            <Button variant="success" size="sm" onClick={() => handleReactivar(emp.idEmpleado, nombreCompleto)}>
+                              <RefreshCw size={12} className="mr-1" /> Reactivar
+                            </Button>
                           )}
                         </div>
-                      ) : (
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Solo Lectura</span>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

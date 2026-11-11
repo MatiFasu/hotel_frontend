@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus,
-  CheckCircle,
-  AlertTriangle,
   RefreshCw,
   Trash2,
   Edit2,
@@ -11,8 +9,23 @@ import {
   Square,
   Percent,
   Calendar,
-  MapPin
+  MapPin,
+  Search,
+  AlertTriangle,
+  Tag,
+  Package,
 } from 'lucide-react';
+import {
+  Button,
+  Badge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  TableSkeleton,
+  EmptyState,
+} from './ui';
 
 export default function PaquetesView() {
   const [paquetes, setPaquetes] = useState([]);
@@ -23,6 +36,7 @@ export default function PaquetesView() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mostrarTodos, setMostrarTodos] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
 
   const [nombrePaquete, setNombrePaquete] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
@@ -93,7 +107,7 @@ export default function PaquetesView() {
     );
   };
 
-  // Cálculo dinámico en vivo (suma - 10% OFF)
+  // Cálculo dinámico en vivo (suma - 10% OFF con redondeo estándar)
   const serviciosSeleccionados = serviciosActivos.filter(s =>
     selectedIds.includes(s.codigoServicio)
   );
@@ -101,8 +115,8 @@ export default function PaquetesView() {
     (acc, s) => acc + (parseFloat(s.costoServicio) || 0),
     0
   );
-  const descuentoDiez = Math.round(subtotal * 0.10 * 100) / 100;
-  const costoFinalConDescuento = Math.round(subtotal * 0.90 * 100) / 100;
+  const descuentoDiez = subtotal * 0.10;
+  const costoFinalConDescuento = subtotal - descuentoDiez;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,7 +124,7 @@ export default function PaquetesView() {
     setSuccessMsg(null);
 
     if (selectedIds.length < 2) {
-      setError('Un paquete turístico debe contener al menos 2 servicios distintos y activos (Decisión 3).');
+      setError('Un paquete turístico debe incluir como mínimo 2 servicios turísticos distintos (Decisión 3).');
       return;
     }
 
@@ -119,13 +133,15 @@ export default function PaquetesView() {
       const url = isEdit ? `/api/paquetes/${editingId}` : '/api/paquetes';
       const method = isEdit ? 'PUT' : 'POST';
 
+      const payload = {
+        nombre: nombrePaquete.trim(),
+        serviciosIds: selectedIds
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nombre: nombrePaquete,
-          servicioIds: selectedIds
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -135,8 +151,8 @@ export default function PaquetesView() {
 
       setSuccessMsg(
         isEdit
-          ? `¡Paquete "${data.nombre}" actualizado con éxito!`
-          : `¡Paquete "${data.nombre}" creado con 10% de descuento ($${parseFloat(data.costoPaquete).toLocaleString('es-AR', { minimumFractionDigits: 2 })})!`
+          ? `Paquete "${data.nombre}" actualizado correctamente.`
+          : `¡Paquete "${data.nombre}" creado exitosamente con 10% OFF (#${data.codigoPaquete})!`
       );
       setShowForm(false);
       setEditingId(null);
@@ -148,248 +164,396 @@ export default function PaquetesView() {
     }
   };
 
-  const handleBaja = async (id, nombre) => {
-    if (!window.confirm(`¿Estás seguro de dar de baja lógica el paquete "${nombre}"?`)) return;
+  const handleBaja = async (codigo, nombre) => {
+    if (!window.confirm(`¿Estás seguro de dar de baja lógica al paquete "${nombre}" (#${codigo})?`)) return;
     setError(null);
     setSuccessMsg(null);
     try {
-      const res = await fetch(`/api/paquetes/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        let msg = 'Error al dar de baja el paquete';
-        try {
-          const data = await res.json();
-          if (data && data.message) msg = data.message;
-        } catch (_) {}
-        throw new Error(msg);
-      }
-      setSuccessMsg(`Paquete "${nombre}" dado de baja lógica.`);
+      const res = await fetch(`/api/paquetes/${codigo}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al dar de baja el paquete');
+      setSuccessMsg(`Paquete "${nombre}" (#${codigo}) dado de baja lógica.`);
       cargarDatos();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const handleReactivar = async (id, nombre) => {
+  const handleReactivar = async (codigo, nombre) => {
     setError(null);
     setSuccessMsg(null);
     try {
-      const res = await fetch(`/api/paquetes/${id}/reactivar`, { method: 'PATCH' });
+      const res = await fetch(`/api/paquetes/${codigo}/reactivar`, { method: 'PATCH' });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'Error al reactivar el paquete');
       }
-      setSuccessMsg(`Paquete "${nombre}" reactivado exitosamente.`);
+      setSuccessMsg(`Paquete "${nombre}" (#${codigo}) reactivado exitosamente.`);
       cargarDatos();
     } catch (err) {
       setError(err.message);
     }
   };
 
+  const paquetesFiltrados = paquetes.filter(p => {
+    if (!busqueda.trim()) return true;
+    const q = busqueda.toLowerCase();
+    return (
+      p.nombre?.toLowerCase().includes(q) ||
+      p.codigoPaquete?.toString().includes(q) ||
+      p.servicios?.some(s => s.nombre?.toLowerCase().includes(q) || s.destinoServicio?.toLowerCase().includes(q))
+    );
+  });
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="space-y-6 text-left">
       {/* Encabezado */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-dark-borderSubtle">
         <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Composición de Paquetes Turísticos</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            Combina 2 o más servicios activos con un <strong>10% de descuento automático</strong> calculado en tiempo real.
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight">
+              Paquetes Turísticos
+            </h2>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              10% OFF Automático
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-dark-muted mt-1">
+            Combinaciones comerciales de 2 o más servicios con descuento automático garantizado por el sistema.
           </p>
         </div>
-        <button className="btn-primary" onClick={abrirNuevo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Plus size={18} />
+        <Button
+          variant="primary"
+          onClick={abrirNuevo}
+          leftIcon={<Plus size={16} />}
+        >
           {showForm ? 'Cerrar Formulario' : 'Nuevo Paquete'}
-        </button>
+        </Button>
       </div>
 
       {/* Alertas */}
       {error && (
-        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--accent-danger)', color: '#f87171', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <AlertTriangle size={20} />
-          <span>{error}</span>
+        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
+          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold block mb-0.5">Atención requerida</span>
+            <span>{error}</span>
+          </div>
         </div>
       )}
 
       {successMsg && (
-        <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--accent-success)', color: '#34d399', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <CheckCircle size={20} />
-          <span>{successMsg}</span>
+        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessMsg(null)}
+            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
+          >
+            Cerrar
+          </button>
         </div>
       )}
 
-      {/* Formulario de Creación / Edición */}
+      {/* Formulario de Alta / Edición */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="glass-panel" style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Briefcase size={20} />
-            {editingId ? `Editar Paquete #${editingId}` : 'Armar Nuevo Paquete Turístico'}
-          </h3>
+        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
+          <CardHeader>
+            <CardTitle>
+              {editingId ? `Editar Paquete Turístico #${editingId}` : 'Armar Nuevo Paquete Turístico'}
+            </CardTitle>
+            <CardDescription>
+              Seleccione al menos 2 servicios activos. El sistema calculará automáticamente el 10% de ahorro.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5">Nombre del Paquete *</label>
+                <input
+                  type="text"
+                  required
+                  className="input-control"
+                  placeholder="Ej. Escapada a Bariloche Completa (Hotel + Excursión + Vuelo)"
+                  value={nombrePaquete}
+                  onChange={(e) => setNombrePaquete(e.target.value)}
+                />
+              </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Nombre Comercial del Paquete *
-            </label>
+              {/* Selector interactivo de servicios */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-gray-300">
+                    Seleccionar Servicios Incluidos (Mínimo 2) *
+                  </label>
+                  <span className="text-xs font-bold text-brand-400">
+                    {selectedIds.length} seleccionados
+                  </span>
+                </div>
+
+                {serviciosActivos.length === 0 ? (
+                  <div className="p-4 rounded-lg bg-dark-bg border border-dark-borderSubtle text-xs text-dark-muted text-center">
+                    No hay servicios turísticos activos para combinar. Registre servicios primero.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto p-1">
+                    {serviciosActivos.map(s => {
+                      const isSelected = selectedIds.includes(s.codigoServicio);
+                      return (
+                        <div
+                          key={s.codigoServicio}
+                          onClick={() => toggleServicio(s.codigoServicio)}
+                          className={`
+                            p-3 rounded-lg border cursor-pointer select-none transition-all flex items-start gap-2.5
+                            ${isSelected
+                              ? 'bg-brand-600/15 border-brand-500/40 text-gray-100 shadow-sm'
+                              : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                            }
+                          `}
+                        >
+                          <div className="mt-0.5 text-brand-400 shrink-0">
+                            {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-dark-muted" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold truncate">{s.nombre}</span>
+                              <Badge variant="info" size="sm">{s.tipoServicio}</Badge>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-dark-muted mt-1">
+                              <span>{s.destinoServicio}</span>
+                              <span className="font-bold text-emerald-400">
+                                ${parseFloat(s.costoServicio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Previsualizador de Descuento del 10% */}
+              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                    <Percent size={20} />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-gray-100">Descuento del 10% OFF aplicado por normativa</h5>
+                    <p className="text-[11px] text-dark-muted mt-0.5">
+                      Subtotal base: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · Ahorro: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Costo Final con 10% OFF</span>
+                  <span className="text-xl font-extrabold text-emerald-400">
+                    ${costoFinalConDescuento.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
+                <Button variant="secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>
+                  Cancelar
+                </Button>
+                <Button type="submit" variant="primary" disabled={selectedIds.length < 2}>
+                  {editingId ? 'Guardar Cambios' : 'Crear Paquete con 10% OFF'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Barra de Filtros y Búsqueda */}
+      <Card>
+        <div className="p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
             <input
               type="text"
-              required
-              minLength={3}
-              maxLength={100}
-              className="input-control"
-              placeholder="Ej. Escapada Cataratas Clásica (Hotel + Vuelo + Excursión)"
-              value={nombrePaquete}
-              onChange={(e) => setNombrePaquete(e.target.value)}
+              className="input-control pl-9 text-xs"
+              placeholder="Buscar por nombre de paquete o servicio incluido..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
 
-          {/* Selector Interactivo de Servicios Activos */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Selecciona al menos <strong>2 servicios activos</strong> ({selectedIds.length} seleccionados):
-              </label>
-              <span className={`badge ${selectedIds.length >= 2 ? 'badge-active' : 'badge-inactive'}`}>
-                {selectedIds.length >= 2 ? 'Mínimo cumplido (≥ 2 servicios)' : 'Faltan servicios (mínimo 2)'}
-              </span>
-            </div>
+          <div className="flex items-center justify-between sm:justify-end gap-4">
+            <label className="flex items-center gap-2 text-xs text-dark-muted hover:text-gray-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={mostrarTodos}
+                onChange={(e) => setMostrarTodos(e.target.checked)}
+                className="rounded border-dark-border bg-dark-surface text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span>Ver dados de baja</span>
+            </label>
 
-            {serviciosActivos.length < 2 ? (
-              <div style={{ padding: '1.25rem', borderRadius: 'var(--radius-sm)', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', color: '#fbbf24', fontSize: '0.9rem' }}>
-                Necesitas al menos 2 servicios turísticos activos en el catálogo para poder armar un paquete. Ve a la pestaña <strong>Servicios Turísticos</strong> para crearlos.
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))', gap: '0.75rem', maxHeight: '320px', overflowY: 'auto', padding: '0.25rem' }}>
-                {serviciosActivos.map(s => {
-                  const isSelected = selectedIds.includes(s.codigoServicio);
-                  return (
-                    <div
-                      key={s.codigoServicio}
-                      onClick={() => toggleServicio(s.codigoServicio)}
-                      style={{
-                        padding: '0.9rem 1rem',
-                        borderRadius: 'var(--radius-sm)',
-                        cursor: 'pointer',
-                        border: isSelected ? '1px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
-                        background: isSelected ? 'rgba(59, 130, 246, 0.14)' : 'rgba(255, 255, 255, 0.03)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.4rem',
-                        transition: 'var(--transition-fast)'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.92rem' }}>
-                          {isSelected ? (
-                            <CheckSquare size={17} color="var(--accent-primary)" />
-                          ) : (
-                            <Square size={17} color="var(--text-muted)" />
-                          )}
-                          <span>{s.nombre}</span>
-                        </div>
-                        <span className="badge badge-type" style={{ fontSize: '0.7rem' }}>{s.tipoServicio}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <MapPin size={12} /> {s.destinoServicio}
-                        </span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <Calendar size={12} /> {s.fechaServicio}
-                        </span>
-                      </div>
-
-                      <div style={{ fontWeight: 700, color: 'var(--accent-success)', fontSize: '0.95rem', textAlign: 'right' }}>
-                        ${parseFloat(s.costoServicio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Previsualizador de Descuento del 10% */}
-          <div style={{
-            padding: '1rem 1.25rem',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(16, 185, 129, 0.08)',
-            border: '1px solid rgba(16, 185, 129, 0.25)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '1rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <Percent size={20} color="var(--accent-success)" />
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>Previsualización de Costo Dinámico (Regla del 10% OFF)</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Suma individual: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — Ahorro 10%: -${descuentoDiez.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Costo Final Paquete</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-success)' }}>
-                ${costoFinalConDescuento.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => { setShowForm(false); setEditingId(null); }}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={cargarDatos}
+              leftIcon={<RefreshCw size={13} className={loading ? 'animate-spin' : ''} />}
             >
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary" disabled={selectedIds.length < 2}>
-              {editingId ? 'Guardar Cambios' : 'Crear Paquete con 10% OFF'}
-            </button>
+              <span className="hidden sm:inline">Actualizar</span>
+            </Button>
           </div>
-        </form>
-      )}
+        </div>
+      </Card>
 
-      {/* Barra de Filtros */}
-      <div className="glass-panel" style={{ padding: '1rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-          <input
-            type="checkbox"
-            checked={mostrarTodos}
-            onChange={(e) => setMostrarTodos(e.target.checked)}
-          />
-          Mostrar también paquetes inactivos (dados de baja)
-        </label>
-
-        <button className="btn-secondary" onClick={cargarDatos} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem' }}>
-          <RefreshCw size={15} />
-          Actualizar
-        </button>
-      </div>
-
-      {/* Tabla de Paquetes Turísticos */}
-      <div className="glass-panel" style={{ overflowX: 'auto' }}>
+      {/* Contenedor de Listado */}
+      <Card>
         {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Cargando paquetes turísticos...</div>
-        ) : paquetes.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No hay paquetes turísticos registrados para este filtro. ¡Crea el primero combinando 2 o más servicios!
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Nombre del Paquete</th>
+                  <th>Servicios Incluidos</th>
+                  <th>Suma Base</th>
+                  <th>Costo (-10%)</th>
+                  <th>Estado</th>
+                  <th className="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <TableSkeleton rows={4} cols={7} />
+              </tbody>
+            </table>
           </div>
+        ) : paquetesFiltrados.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title={busqueda ? 'No se encontraron paquetes para la búsqueda' : 'No hay paquetes turísticos registrados'}
+            description={busqueda ? 'Prueba con otro término de búsqueda.' : 'Combina 2 o más servicios activos para crear tu primer paquete turístico.'}
+            action={
+              <Button variant="primary" size="sm" onClick={abrirNuevo} leftIcon={<Plus size={14} />}>
+                Crear Primer Paquete
+              </Button>
+            }
+          />
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Código</th>
-                <th>Nombre del Paquete</th>
-                <th>Servicios Incluidos</th>
-                <th>Suma Base</th>
-                <th>Costo Paquete (-10%)</th>
-                <th>Estado</th>
-                <th style={{ textAlign: 'right' }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paquetes.map((p) => {
+          <>
+            {/* Tabla Desktop */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="w-16">Código</th>
+                    <th>Nombre del Paquete</th>
+                    <th>Servicios Incluidos</th>
+                    <th>Suma Base</th>
+                    <th>Costo Paquete (-10%)</th>
+                    <th>Estado</th>
+                    <th className="text-right w-36">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-borderSubtle">
+                  {paquetesFiltrados.map((p) => {
+                    const isActivo = p.activo !== false;
+                    const servicios = p.servicios || [];
+                    const sumaOriginal = servicios.reduce(
+                      (acc, s) => acc + (parseFloat(s.costoServicio) || 0),
+                      0
+                    );
+                    return (
+                      <tr
+                        key={p.codigoPaquete}
+                        className={`transition-colors hover:bg-dark-elevated/40 ${!isActivo ? 'opacity-60 bg-red-950/5' : ''}`}
+                      >
+                        <td className="font-semibold text-brand-400">
+                          #{p.codigoPaquete}
+                        </td>
+                        <td>
+                          <div className="font-semibold text-gray-100 flex items-center gap-2">
+                            <Briefcase size={14} className="text-brand-400 shrink-0" />
+                            <span>{p.nombre}</span>
+                          </div>
+                          <div className="text-xs text-dark-muted mt-0.5">
+                            {servicios.length} servicios asociados
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex flex-wrap gap-1.5 max-w-sm">
+                            {servicios.map(s => (
+                              <span
+                                key={s.codigoServicio}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-dark-bg border border-dark-borderSubtle text-gray-300"
+                                title={`${s.destinoServicio} (${s.fechaServicio}) - $${parseFloat(s.costoServicio).toLocaleString('es-AR')}`}
+                              >
+                                #{s.codigoServicio} {s.nombre}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="text-xs text-dark-muted line-through">
+                            ${sumaOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </td>
+                        <td>
+                          <div>
+                            <span className="font-bold text-emerald-400 text-sm">
+                              ${parseFloat(p.costoPaquete).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                            <span className="block text-[10px] text-emerald-400/80 font-semibold">10% OFF Aplicado</span>
+                          </div>
+                        </td>
+                        <td>
+                          <Badge variant={isActivo ? 'success' : 'danger'} size="sm" dot>
+                            {isActivo ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {isActivo ? (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => abrirEdicion(p)}
+                                  leftIcon={<Edit2 size={12} />}
+                                >
+                                  Editar
+                                </Button>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleBaja(p.codigoPaquete, p.nombre)}
+                                  title="Dar de baja lógica"
+                                >
+                                  <Trash2 size={13} />
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="success"
+                                size="sm"
+                                onClick={() => handleReactivar(p.codigoPaquete, p.nombre)}
+                                leftIcon={<RefreshCw size={12} />}
+                              >
+                                Reactivar
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Vista en Tarjetas para Móviles */}
+            <div className="md:hidden divide-y divide-dark-borderSubtle">
+              {paquetesFiltrados.map((p) => {
                 const isActivo = p.activo !== false;
                 const servicios = p.servicios || [];
                 const sumaOriginal = servicios.reduce(
@@ -397,85 +561,68 @@ export default function PaquetesView() {
                   0
                 );
                 return (
-                  <tr key={p.codigoPaquete} style={{ opacity: isActivo ? 1 : 0.6 }}>
-                    <td style={{ fontWeight: 600 }}>#{p.codigoPaquete}</td>
-                    <td>
-                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <Briefcase size={15} color="var(--accent-primary)" />
-                        {p.nombre}
+                  <div key={p.codigoPaquete} className={`p-4 space-y-3 ${!isActivo ? 'opacity-70 bg-red-950/10' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-brand-400">#{p.codigoPaquete}</span>
+                          <Badge variant={isActivo ? 'success' : 'danger'} size="sm" dot>
+                            {isActivo ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </div>
+                        <h4 className="text-sm font-semibold text-gray-100 mt-1">{p.nombre}</h4>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        {servicios.length} servicios combinados
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        10% OFF
+                      </span>
+                    </div>
+
+                    {/* Chips de servicios */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-dark-muted uppercase font-bold">Servicios ({servicios.length}):</span>
+                      <div className="flex flex-wrap gap-1">
                         {servicios.map(s => (
-                          <span
-                            key={s.codigoServicio}
-                            className="badge badge-type"
-                            style={{ fontSize: '0.75rem' }}
-                            title={`${s.destinoServicio} (${s.fechaServicio}) - $${parseFloat(s.costoServicio).toLocaleString('es-AR')}`}
-                          >
-                            #{s.codigoServicio} {s.nombre}
+                          <span key={s.codigoServicio} className="text-[10px] px-1.5 py-0.5 rounded bg-dark-bg border border-dark-borderSubtle text-gray-300">
+                            {s.nombre}
                           </span>
                         ))}
                       </div>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', textDecoration: 'line-through', fontSize: '0.9rem' }}>
-                      ${sumaOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--accent-success)', fontSize: '1rem' }}>
-                        ${parseFloat(p.costoPaquete).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-dark-borderSubtle/50">
+                      <div>
+                        <span className="text-[10px] text-dark-muted line-through block">
+                          Base: ${sumaOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-sm font-bold text-emerald-400">
+                          ${parseFloat(p.costoPaquete).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--accent-success)' }}>10% OFF aplicado</span>
-                    </td>
-                    <td>
-                      <span className={`badge ${isActivo ? 'badge-active' : 'badge-inactive'}`}>
-                        {isActivo ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+
+                      <div className="flex items-center gap-2">
                         {isActivo ? (
                           <>
-                            <button
-                              className="btn-secondary"
-                              style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                              onClick={() => abrirEdicion(p)}
-                            >
-                              <Edit2 size={13} />
-                              Editar
-                            </button>
-                            <button
-                              className="btn-danger"
-                              onClick={() => handleBaja(p.codigoPaquete, p.nombre)}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                            >
-                              <Trash2 size={14} />
-                              Dar de Baja
-                            </button>
+                            <Button variant="secondary" size="sm" onClick={() => abrirEdicion(p)}>
+                              <Edit2 size={12} className="mr-1" /> Editar
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={() => handleBaja(p.codigoPaquete, p.nombre)}>
+                              <Trash2 size={13} />
+                            </Button>
                           </>
                         ) : (
-                          <button
-                            className="btn-success"
-                            onClick={() => handleReactivar(p.codigoPaquete, p.nombre)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <RefreshCw size={14} />
-                            Reactivar
-                          </button>
+                          <Button variant="success" size="sm" onClick={() => handleReactivar(p.codigoPaquete, p.nombre)}>
+                            <RefreshCw size={12} className="mr-1" /> Reactivar
+                          </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

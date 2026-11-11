@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   ShoppingBag,
   Plus,
-  CheckCircle,
-  AlertTriangle,
   RefreshCw,
   Ban,
   CreditCard,
@@ -11,8 +9,23 @@ import {
   Briefcase,
   User,
   UserCheck,
-  DollarSign
+  DollarSign,
+  Search,
+  AlertTriangle,
+  Receipt,
+  ArrowRight,
 } from 'lucide-react';
+import {
+  Button,
+  Badge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  TableSkeleton,
+  EmptyState,
+} from './ui';
 
 export default function VentasView({ sesion }) {
   const [ventas, setVentas] = useState([]);
@@ -30,6 +43,7 @@ export default function VentasView({ sesion }) {
   // Filtros de listado
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipoProducto, setFiltroTipoProducto] = useState('');
+  const [busqueda, setBusqueda] = useState('');
 
   // Estado del formulario de Punto de Venta (XOR: SERVICIO o PAQUETE)
   const [modalidadProducto, setModalidadProducto] = useState('SERVICIO');
@@ -98,39 +112,46 @@ export default function VentasView({ sesion }) {
     cargarTodo();
   }, [filtroEstado, filtroTipoProducto]);
 
-  // Cálculo del Snapshot Financiero en Vivo
-  const productoSeleccionadoMonto = () => {
-    if (modalidadProducto === 'SERVICIO') {
-      const s = servicios.find(item => String(item.codigoServicio) === String(servicioId));
-      return s ? parseFloat(s.costoServicio) || 0 : 0;
-    } else {
-      const p = paquetes.find(item => String(item.codigoPaquete) === String(paqueteId));
-      return p ? parseFloat(p.costoPaquete) || 0 : 0;
-    }
-  };
+  // Cálculo dinámico del snapshot financiero previo a emitir
+  const productoSeleccionado = modalidadProducto === 'SERVICIO'
+    ? servicios.find(s => String(s.codigoServicio) === String(servicioId))
+    : paquetes.find(p => String(p.codigoPaquete) === String(paqueteId));
 
-  const medioSeleccionado = mediosPago.find(m => m.codigo === medioPago) || {
-    codigo: 'EFECTIVO',
-    descripcion: 'Efectivo',
-    porcentajeComision: 0
-  };
+  const montoTotalPreview = productoSeleccionado
+    ? (modalidadProducto === 'SERVICIO' ? parseFloat(productoSeleccionado.costoServicio) : parseFloat(productoSeleccionado.costoPaquete))
+    : 0;
 
-  const montoTotalPreview = Math.round(productoSeleccionadoMonto() * 100) / 100;
-  const tasaComisionPreview = parseFloat(medioSeleccionado.porcentajeComision) || 0;
-  const montoComisionPreview = Math.round(montoTotalPreview * (tasaComisionPreview / 100) * 100) / 100;
-  const gananciaNetaPreview = Math.round((montoTotalPreview - montoComisionPreview) * 100) / 100;
+  const medioSeleccionado = mediosPago.find(m => m.codigo === medioPago) || { porcentajeComision: 0, descripcion: 'Efectivo' };
+  const tasaComisionPreview = medioSeleccionado.porcentajeComision || 0;
+  const montoComisionPreview = (montoTotalPreview * tasaComisionPreview) / 100;
+  const gananciaNetaPreview = montoTotalPreview - montoComisionPreview;
 
   const handleEmitirVenta = async (e) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
 
+    if (!clienteId || !empleadoId) {
+      setError('Debes seleccionar un cliente y un empleado vendedor válido.');
+      return;
+    }
+
+    if (modalidadProducto === 'SERVICIO' && !servicioId) {
+      setError('Debes seleccionar un servicio turístico.');
+      return;
+    }
+
+    if (modalidadProducto === 'PAQUETE' && !paqueteId) {
+      setError('Debes seleccionar un paquete turístico.');
+      return;
+    }
+
     const payload = {
-      clienteId: clienteId ? Number(clienteId) : null,
-      empleadoId: empleadoId ? Number(empleadoId) : null,
-      medioPago,
-      servicioId: modalidadProducto === 'SERVICIO' && servicioId ? Number(servicioId) : null,
-      paqueteId: modalidadProducto === 'PAQUETE' && paqueteId ? Number(paqueteId) : null
+      clienteId: parseInt(clienteId),
+      empleadoId: parseInt(empleadoId),
+      medioPago: medioPago,
+      servicioId: modalidadProducto === 'SERVICIO' ? parseInt(servicioId) : null,
+      paqueteId: modalidadProducto === 'PAQUETE' ? parseInt(paqueteId) : null
     };
 
     try {
@@ -142,12 +163,10 @@ export default function VentasView({ sesion }) {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Error al registrar la venta');
+        throw new Error(data.message || 'Error al procesar la venta');
       }
 
-      setSuccessMsg(
-        `¡Venta #${data.numVenta} emitida exitosamente! Total cobrado: $${parseFloat(data.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })} | Comisión (${data.porcentajeComision}%): $${parseFloat(data.montoComision).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-      );
+      setSuccessMsg(`¡Venta #${data.numVenta} emitida exitosamente por $${parseFloat(data.montoTotal).toLocaleString('es-AR')}! Ganancia neta: $${parseFloat(data.gananciaNeta).toLocaleString('es-AR')}`);
       setShowForm(false);
       cargarTodo();
     } catch (err) {
@@ -156,9 +175,7 @@ export default function VentasView({ sesion }) {
   };
 
   const handleAnular = async (numVenta) => {
-    if (!window.confirm(`¿Estás seguro de anular la venta #${numVenta}? Esta acción registrará la fecha de anulación y descontará la operación de las ganancias activas.`)) {
-      return;
-    }
+    if (!window.confirm(`¿Estás seguro de anular la venta #${numVenta}? Esta acción revertirá el balance financiero (Decisión 9).`)) return;
     setError(null);
     setSuccessMsg(null);
     try {
@@ -167,383 +184,512 @@ export default function VentasView({ sesion }) {
       if (!res.ok) {
         throw new Error(data.message || 'Error al anular la venta');
       }
-      setSuccessMsg(`Venta #${numVenta} anulada correctamente (${data.fechaAnulacion?.replace('T', ' ').substring(0, 19)}).`);
+      setSuccessMsg(`Venta #${numVenta} anulada correctamente.`);
       cargarTodo();
     } catch (err) {
       setError(err.message);
     }
   };
 
+  const ventasFiltradas = ventas.filter(v => {
+    if (!busqueda.trim()) return true;
+    const q = busqueda.toLowerCase();
+    const itemNombre = v.tipoProducto === 'SERVICIO' ? v.servicioNombre : v.paqueteNombre;
+    return (
+      v.numVenta?.toString().includes(q) ||
+      v.clienteNombreCompleto?.toLowerCase().includes(q) ||
+      v.clienteDni?.includes(q) ||
+      v.empleadoNombreCompleto?.toLowerCase().includes(q) ||
+      itemNombre?.toLowerCase().includes(q) ||
+      v.medioPago?.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="space-y-6 text-left">
       {/* Encabezado */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-dark-borderSubtle">
         <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Punto de Venta (POS) & Transacciones</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            Emisión de ventas con <strong>exclusión mutua XOR</strong> (Servicio Individual o Paquete), congelamiento de snapshot financiero y cálculo de comisiones.
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-100 tracking-tight">
+            Punto de Venta
+          </h2>
+          <p className="text-xs sm:text-sm text-dark-muted mt-1">
+            Registro transaccional con exclusión mutua XOR, snapshot financiero inmutable y comisiones por medio de pago.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Plus size={18} />
+        <Button
+          variant="primary"
+          onClick={() => setShowForm(!showForm)}
+          leftIcon={<Plus size={16} />}
+        >
           {showForm ? 'Cerrar Punto de Venta' : 'Nueva Venta'}
-        </button>
+        </Button>
       </div>
 
       {/* Alertas */}
       {error && (
-        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--accent-danger)', color: '#f87171', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <AlertTriangle size={20} />
-          <span>{error}</span>
+        <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs sm:text-sm flex items-start gap-3 animate-slide-up">
+          <AlertTriangle size={18} className="shrink-0 text-red-400 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold block mb-0.5">Atención requerida</span>
+            <span>{error}</span>
+          </div>
         </div>
       )}
 
       {successMsg && (
-        <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--accent-success)', color: '#34d399', padding: '1rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <CheckCircle size={20} />
-          <span>{successMsg}</span>
+        <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center justify-between gap-3 animate-slide-up">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessMsg(null)}
+            className="text-emerald-400/80 hover:text-emerald-200 text-xs font-semibold"
+          >
+            Cerrar
+          </button>
         </div>
       )}
 
       {/* Formulario Punto de Venta */}
       {showForm && (
-        <form onSubmit={handleEmitirVenta} className="glass-panel" style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <ShoppingBag size={20} />
-            Emitir Nueva Venta (Snapshot Financiero)
-          </h3>
-
-          {/* Selector de Modalidad XOR */}
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Tipo de Producto a Comercializar (Exclusión Mutua XOR — Decisión 8) *
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
-              <button
-                type="button"
-                onClick={() => setModalidadProducto('SERVICIO')}
-                style={{
-                  padding: '0.9rem 1rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: modalidadProducto === 'SERVICIO' ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: modalidadProducto === 'SERVICIO' ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
-                  fontWeight: 600
-                }}
-              >
-                <Compass size={19} color="var(--accent-primary)" />
-                <span>Servicio Turístico Individual</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModalidadProducto('PAQUETE')}
-                style={{
-                  padding: '0.9rem 1rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: modalidadProducto === 'PAQUETE' ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: modalidadProducto === 'PAQUETE' ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
-                  fontWeight: 600
-                }}
-              >
-                <Briefcase size={19} color="var(--accent-success)" />
-                <span>Paquete Turístico (10% OFF)</span>
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
-            {/* Cliente */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Cliente Adquirente (Activo) *
-              </label>
-              <select
-                required
-                className="input-control"
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value)}
-              >
-                <option value="">-- Seleccionar Cliente --</option>
-                {clientes.map(c => (
-                  <option key={c.idCliente} value={c.idCliente}>
-                    #{c.idCliente} - {c.nombre} {c.apellido} (DNI {c.dni})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Empleado Vendedor */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Empleado Vendedor (Activo) *
-              </label>
-              <select
-                required
-                className="input-control"
-                value={empleadoId}
-                onChange={(e) => setEmpleadoId(e.target.value)}
-              >
-                <option value="">-- Seleccionar Vendedor --</option>
-                {empleados.map(e => (
-                  <option key={e.idEmpleado} value={e.idEmpleado}>
-                    #{e.idEmpleado} - {e.nombre} {e.apellido} ({e.cargo})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Producto XOR: Servicio o Paquete */}
-            {modalidadProducto === 'SERVICIO' ? (
+        <Card className="animate-slide-up border-brand-500/30 shadow-lg">
+          <CardHeader>
+            <CardTitle>Emisión de Nueva Operación Comercial</CardTitle>
+            <CardDescription>
+              Seleccione la modalidad XOR (Servicio Individual o Paquete Turístico), cliente receptor y medio de pago.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEmitirVenta} className="space-y-5">
+              {/* Selector XOR de Modalidad */}
               <div>
-                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Servicio Turístico Vigente *
+                <label className="block text-xs font-semibold text-gray-300 mb-2">
+                  Modalidad de Venta (Exclusión Mutua XOR) *
                 </label>
-                <select
-                  required
-                  className="input-control"
-                  value={servicioId}
-                  onChange={(e) => setServicioId(e.target.value)}
-                >
-                  <option value="">-- Seleccionar Servicio --</option>
-                  {servicios.map(s => (
-                    <option key={s.codigoServicio} value={s.codigoServicio}>
-                      #{s.codigoServicio} - {s.nombre} ({s.destinoServicio}, {s.fechaServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setModalidadProducto('SERVICIO')}
+                    className={`
+                      p-3.5 rounded-xl border cursor-pointer select-none transition-all flex items-center gap-3
+                      ${modalidadProducto === 'SERVICIO'
+                        ? 'bg-brand-600/15 border-brand-500 text-white shadow-sm'
+                        : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                      }
+                    `}
+                  >
+                    <div className={`p-2 rounded-lg ${modalidadProducto === 'SERVICIO' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                      <Compass size={18} />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-gray-100">Servicio Individual</h5>
+                      <p className="text-[11px] text-dark-muted">Costo regular de catálogo</p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setModalidadProducto('PAQUETE')}
+                    className={`
+                      p-3.5 rounded-xl border cursor-pointer select-none transition-all flex items-center justify-between gap-3
+                      ${modalidadProducto === 'PAQUETE'
+                        ? 'bg-brand-600/15 border-brand-500 text-white shadow-sm'
+                        : 'bg-dark-bg/60 border-dark-borderSubtle text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                      }
+                    `}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${modalidadProducto === 'PAQUETE' ? 'bg-brand-600 text-white' : 'bg-dark-elevated text-dark-muted'}`}>
+                        <Briefcase size={18} />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-gray-100">Paquete Turístico</h5>
+                        <p className="text-[11px] text-dark-muted">Servicios combinados</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      10% OFF
+                    </span>
+                  </div>
+                </div>
               </div>
-            ) : (
+
+              {/* Selección de Producto */}
               <div>
-                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Paquete Turístico Activo (-10% incluido) *
+                <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                  {modalidadProducto === 'SERVICIO' ? 'Seleccionar Servicio Turístico *' : 'Seleccionar Paquete Turístico *'}
                 </label>
-                <select
-                  required
-                  className="input-control"
-                  value={paqueteId}
-                  onChange={(e) => setPaqueteId(e.target.value)}
-                >
-                  <option value="">-- Seleccionar Paquete --</option>
-                  {paquetes.map(p => (
-                    <option key={p.codigoPaquete} value={p.codigoPaquete}>
-                      #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} serv.) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')}
-                    </option>
-                  ))}
-                </select>
+                {modalidadProducto === 'SERVICIO' ? (
+                  <select
+                    required
+                    className="input-control"
+                    value={servicioId}
+                    onChange={(e) => setServicioId(e.target.value)}
+                  >
+                    {servicios.map(s => (
+                      <option key={s.codigoServicio} value={s.codigoServicio}>
+                        #{s.codigoServicio} - {s.nombre} ({s.destinoServicio} - {s.fechaServicio}) — ${parseFloat(s.costoServicio).toLocaleString('es-AR')}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    required
+                    className="input-control"
+                    value={paqueteId}
+                    onChange={(e) => setPaqueteId(e.target.value)}
+                  >
+                    {paquetes.map(p => (
+                      <option key={p.codigoPaquete} value={p.codigoPaquete}>
+                        #{p.codigoPaquete} - {p.nombre} ({p.servicios?.length || 0} servicios) — ${parseFloat(p.costoPaquete).toLocaleString('es-AR')} (10% OFF incluido)
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-            )}
 
-            {/* Medio de Pago */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Medio de Pago (Comisión Oficial) *
-              </label>
-              <select
-                required
-                className="input-control"
-                value={medioPago}
-                onChange={(e) => setMedioPago(e.target.value)}
-              >
-                {mediosPago.map(mp => (
-                  <option key={mp.codigo} value={mp.codigo}>
-                    {mp.descripcion} — Comisión: {mp.porcentajeComision}%
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+              {/* Cliente, Vendedor y Medio de Pago */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Cliente Receptor *</label>
+                  <select
+                    required
+                    className="input-control"
+                    value={clienteId}
+                    onChange={(e) => setClienteId(e.target.value)}
+                  >
+                    {clientes.map(c => (
+                      <option key={c.idCliente} value={c.idCliente}>
+                        {c.nombre} {c.apellido} (DNI: {c.dni})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Visor de Snapshot Financiero en Vivo */}
-          <div style={{
-            padding: '1.1rem 1.25rem',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(59, 130, 246, 0.08)',
-            border: '1px solid rgba(59, 130, 246, 0.25)',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: '1rem',
-            alignItems: 'center'
-          }}>
-            <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Monto Bruto al Cliente</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff' }}>
-                ${montoTotalPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Vendedor Responsable *</label>
+                  <select
+                    required
+                    className="input-control"
+                    value={empleadoId}
+                    onChange={(e) => setEmpleadoId(e.target.value)}
+                  >
+                    {empleados.map(e => (
+                      <option key={e.idEmpleado} value={e.idEmpleado}>
+                        {e.nombre} {e.apellido} ({e.cargo})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Medio de Pago *</label>
+                  <select
+                    required
+                    className="input-control"
+                    value={medioPago}
+                    onChange={(e) => setMedioPago(e.target.value)}
+                  >
+                    {mediosPago.map(mp => (
+                      <option key={mp.codigo} value={mp.codigo}>
+                        {mp.descripcion} — Comisión: {mp.porcentajeComision}%
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Comisión ({medioSeleccionado.descripcion} - {tasaComisionPreview}%)
-              </div>
-              <div style={{ fontSize: '1.15rem', fontWeight: 600, color: '#fbbf24' }}>
-                -${montoComisionPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-              </div>
-            </div>
+              {/* Visor de Snapshot Financiero en Vivo */}
+              <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-500/30 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Monto Bruto Facturado</span>
+                  <span className="text-lg font-bold text-gray-100">
+                    ${montoTotalPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
 
-            <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ganancia Neta Agencia</div>
-              <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent-success)' }}>
-                ${gananciaNetaPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
+                <div>
+                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">
+                    Comisión Retenida ({medioSeleccionado.descripcion} {tasaComisionPreview}%)
+                  </span>
+                  <span className="text-lg font-bold text-amber-400">
+                    -${montoComisionPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary">
-              Confirmar y Emitir Venta
-            </button>
-          </div>
-        </form>
+                <div>
+                  <span className="text-[10px] text-dark-muted uppercase font-bold tracking-wider block">Ganancia Neta para la Agencia</span>
+                  <span className="text-xl font-extrabold text-emerald-400">
+                    ${gananciaNetaPreview.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-dark-borderSubtle">
+                <Button variant="secondary" onClick={() => setShowForm(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" variant="primary" leftIcon={<Receipt size={16} />}>
+                  Confirmar y Emitir Venta
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Filtros del Historial de Ventas */}
-      <div className="glass-panel" style={{ padding: '1rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Estado:</label>
-          <select
-            className="input-control"
-            style={{ width: 'auto', padding: '0.4rem 0.8rem' }}
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-          >
-            <option value="">Todas (Activas y Anuladas)</option>
-            <option value="ACTIVA">Solo Activas</option>
-            <option value="ANULADA">Solo Anuladas</option>
-          </select>
-        </div>
+      {/* Barra de Filtros y Búsqueda */}
+      <Card>
+        <div className="p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-muted pointer-events-none" />
+              <input
+                type="text"
+                className="input-control pl-9 text-xs"
+                placeholder="Buscar por cliente, DNI, vendedor o producto..."
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
+            </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Modalidad:</label>
-          <select
-            className="input-control"
-            style={{ width: 'auto', padding: '0.4rem 0.8rem' }}
-            value={filtroTipoProducto}
-            onChange={(e) => setFiltroTipoProducto(e.target.value)}
-          >
-            <option value="">Todos los productos</option>
-            <option value="SERVICIO">Servicios Individuales</option>
-            <option value="PAQUETE">Paquetes Turísticos</option>
-          </select>
-        </div>
+            <div className="flex items-center gap-2">
+              <select
+                className="input-control text-xs w-full sm:w-auto"
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+              >
+                <option value="">Todos los Estados</option>
+                <option value="ACTIVA">Solo Activas</option>
+                <option value="ANULADA">Solo Anuladas</option>
+              </select>
 
-        <button className="btn-secondary" onClick={cargarTodo} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem' }}>
-          <RefreshCw size={15} />
-          Actualizar
-        </button>
-      </div>
-
-      {/* Tabla de Ventas */}
-      <div className="glass-panel" style={{ overflowX: 'auto' }}>
-        {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Cargando transacciones...</div>
-        ) : ventas.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No hay ventas registradas para este criterio. ¡Registra una nueva operación con el botón superior!
+              <select
+                className="input-control text-xs w-full sm:w-auto"
+                value={filtroTipoProducto}
+                onChange={(e) => setFiltroTipoProducto(e.target.value)}
+              >
+                <option value="">Todas las Modalidades</option>
+                <option value="SERVICIO">Servicios</option>
+                <option value="PAQUETE">Paquetes</option>
+              </select>
+            </div>
           </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={cargarTodo}
+            leftIcon={<RefreshCw size={13} className={loading ? 'animate-spin' : ''} />}
+          >
+            <span className="hidden sm:inline">Actualizar</span>
+          </Button>
+        </div>
+      </Card>
+
+      {/* Contenedor de Listado */}
+      <Card>
+        {loading ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th># Venta</th>
+                  <th>Fecha</th>
+                  <th>Cliente / Vendedor</th>
+                  <th>Producto Contratado</th>
+                  <th>Medio de Pago</th>
+                  <th>Monto Bruto</th>
+                  <th>Comisión</th>
+                  <th>Ganancia Neta</th>
+                  <th>Estado</th>
+                  <th className="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <TableSkeleton rows={5} cols={10} />
+              </tbody>
+            </table>
+          </div>
+        ) : ventasFiltradas.length === 0 ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title={busqueda || filtroEstado || filtroTipoProducto ? 'No se encontraron ventas para los filtros aplicados' : 'No hay ventas emitidas'}
+            description={busqueda || filtroEstado || filtroTipoProducto ? 'Prueba ajustando los filtros de búsqueda.' : 'Emite la primera operación comercial con el botón superior.'}
+            action={
+              <Button variant="primary" size="sm" onClick={() => setShowForm(true)} leftIcon={<Plus size={14} />}>
+                Nueva Venta
+              </Button>
+            }
+          />
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th># Venta</th>
-                <th>Fecha</th>
-                <th>Cliente / Vendedor</th>
-                <th>Producto Contratado</th>
-                <th>Medio de Pago</th>
-                <th>Monto Bruto</th>
-                <th>Comisión</th>
-                <th>Ganancia Neta</th>
-                <th>Estado</th>
-                <th style={{ textAlign: 'right' }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ventas.map((v) => {
+          <>
+            {/* Tabla Desktop */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="w-16"># Venta</th>
+                    <th>Fecha</th>
+                    <th>Cliente / Vendedor</th>
+                    <th>Producto Contratado</th>
+                    <th>Medio de Pago</th>
+                    <th>Monto Bruto</th>
+                    <th>Comisión</th>
+                    <th>Ganancia Neta</th>
+                    <th>Estado</th>
+                    <th className="text-right w-28">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-borderSubtle">
+                  {ventasFiltradas.map((v) => {
+                    const isActiva = v.estado === 'ACTIVA';
+                    return (
+                      <tr
+                        key={v.numVenta}
+                        className={`transition-colors hover:bg-dark-elevated/40 ${!isActiva ? 'opacity-60 bg-red-950/5' : ''}`}
+                      >
+                        <td className="font-bold text-brand-400">
+                          #{v.numVenta}
+                        </td>
+                        <td className="text-xs text-gray-300">
+                          {v.fechaVenta ? v.fechaVenta.replace('T', ' ').substring(0, 16) : '-'}
+                        </td>
+                        <td>
+                          <div className="font-semibold text-gray-100 flex items-center gap-1.5">
+                            <User size={13} className="text-brand-400 shrink-0" />
+                            <span>{v.clienteNombreCompleto}</span>
+                            <span className="text-xs text-dark-muted">({v.clienteDni})</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-dark-muted mt-0.5">
+                            <UserCheck size={12} className="shrink-0" />
+                            <span>Vendió: {v.empleadoNombreCompleto}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={v.tipoProducto === 'PAQUETE' ? 'warning' : 'info'} size="sm">
+                              {v.tipoProducto}
+                            </Badge>
+                            <span className="font-semibold text-gray-200 text-xs truncate max-w-xs">
+                              {v.tipoProducto === 'SERVICIO' ? v.servicioNombre : v.paqueteNombre}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1 text-xs text-gray-300">
+                            <CreditCard size={12} className="text-dark-muted" />
+                            <span>{v.medioPago}</span>
+                          </div>
+                          <span className="text-[10px] text-dark-muted block">
+                            Tasa: {parseFloat(v.porcentajeComision).toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="font-semibold text-gray-200 text-sm">
+                          ${parseFloat(v.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-amber-400 text-xs font-semibold">
+                          -${parseFloat(v.montoComision).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="font-bold text-emerald-400 text-sm">
+                          ${parseFloat(v.gananciaNeta).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td>
+                          <Badge variant={isActiva ? 'success' : 'danger'} size="sm" dot>
+                            {v.estado}
+                          </Badge>
+                          {!isActiva && v.fechaAnulacion && (
+                            <span className="text-[10px] text-dark-muted block mt-0.5">
+                              {v.fechaAnulacion.replace('T', ' ').substring(0, 16)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-right">
+                          {isActiva ? (
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => handleAnular(v.numVenta)}
+                              leftIcon={<Ban size={12} />}
+                            >
+                              Anular
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-dark-muted">Anulada</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Vista en Tarjetas para Móviles */}
+            <div className="md:hidden divide-y divide-dark-borderSubtle">
+              {ventasFiltradas.map((v) => {
                 const isActiva = v.estado === 'ACTIVA';
                 return (
-                  <tr key={v.numVenta} style={{ opacity: isActiva ? 1 : 0.6 }}>
-                    <td style={{ fontWeight: 700 }}>#{v.numVenta}</td>
-                    <td style={{ fontSize: '0.85rem' }}>
-                      {v.fechaVenta ? v.fechaVenta.replace('T', ' ').substring(0, 16) : '-'}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <User size={14} color="var(--accent-primary)" />
-                        {v.clienteNombreCompleto} <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>({v.clienteDni})</span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem' }}>
-                        <UserCheck size={13} /> Vendió: {v.empleadoNombreCompleto}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="badge badge-type" style={{ marginRight: '0.4rem', fontSize: '0.72rem' }}>
-                        {v.tipoProducto}
-                      </span>
-                      <span style={{ fontWeight: 600 }}>
-                        {v.tipoProducto === 'SERVICIO' ? v.servicioNombre : v.paqueteNombre}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem' }}>
-                        <CreditCard size={14} color="var(--text-secondary)" />
-                        {v.medioPago}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        Tasa: {parseFloat(v.porcentajeComision).toFixed(2)}%
-                      </div>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>
-                      ${parseFloat(v.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ color: '#fbbf24', fontSize: '0.9rem' }}>
-                      -${parseFloat(v.montoComision).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ fontWeight: 700, color: 'var(--accent-success)' }}>
-                      ${parseFloat(v.gananciaNeta).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td>
-                      <span className={`badge ${isActiva ? 'badge-active' : 'badge-inactive'}`}>
-                        {v.estado}
-                      </span>
-                      {!isActiva && v.fechaAnulacion && (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                          {v.fechaAnulacion.replace('T', ' ').substring(0, 16)}
+                  <div key={v.numVenta} className={`p-4 space-y-3 ${!isActiva ? 'opacity-70 bg-red-950/10' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-brand-400">Venta #{v.numVenta}</span>
+                          <Badge variant={isActiva ? 'success' : 'danger'} size="sm" dot>
+                            {v.estado}
+                          </Badge>
                         </div>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
+                        <h4 className="text-sm font-semibold text-gray-100 mt-1">
+                          {v.tipoProducto === 'SERVICIO' ? v.servicioNombre : v.paqueteNombre}
+                        </h4>
+                        <div className="flex items-center gap-1.5 text-xs text-dark-muted mt-0.5">
+                          <User size={12} />
+                          <span>{v.clienteNombreCompleto} (DNI {v.clienteDni})</span>
+                        </div>
+                      </div>
+
+                      <Badge variant={v.tipoProducto === 'PAQUETE' ? 'warning' : 'info'} size="sm">
+                        {v.tipoProducto}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-300 py-1.5 border-y border-dark-borderSubtle/50">
+                      <div>
+                        <span className="text-[10px] text-dark-muted block">Medio de Pago</span>
+                        <span className="font-medium">{v.medioPago} ({parseFloat(v.porcentajeComision).toFixed(1)}%)</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-dark-muted block">Fecha</span>
+                        <span>{v.fechaVenta ? v.fechaVenta.replace('T', ' ').substring(0, 16) : '-'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <div className="text-[10px] text-dark-muted">
+                          Bruto: ${parseFloat(v.montoTotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-sm font-bold text-emerald-400">
+                          Neto: ${parseFloat(v.gananciaNeta).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
                       {isActiva ? (
-                        <button
-                          className="btn-danger"
-                          onClick={() => handleAnular(v.numVenta)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                        >
-                          <Ban size={14} />
-                          Anular Venta
-                        </button>
+                        <Button variant="danger" size="sm" onClick={() => handleAnular(v.numVenta)} leftIcon={<Ban size={12} />}>
+                          Anular
+                        </Button>
                       ) : (
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Anulada</span>
+                        <span className="text-xs text-dark-muted">Anulada</span>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
