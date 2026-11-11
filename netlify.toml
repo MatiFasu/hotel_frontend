@@ -3,10 +3,10 @@
   command = "npm run build"
 
 # Proxy de llamadas API hacia el backend en Render
-# Reemplazar la URL por la URL pública que te asigne Render al crear el Web Service
+# :splat pasa la ruta exacta que viene después de /api/ (ej. /api/auth/login -> https://.../api/auth/login)
 [[redirects]]
   from = "/api/*"
-  to = "https://hotel-backend-bmod.onrender.com"
+  to = "https://hotel-backend-bmod.onrender.com/api/:splat"
   status = 200
   force = true
 
