@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ToastProvider } from './components/ui';
 import { AppLayout, NotFoundView } from './components/layout';
 import LoginView from './components/LoginView';
@@ -34,6 +34,14 @@ function App() {
       sessionStorage.removeItem('hackacode_sesion');
     } catch (_) {}
   };
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      handleLogout();
+    };
+    window.addEventListener('hackacode:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('hackacode:unauthorized', onUnauthorized);
+  }, []);
 
   // Bloqueo de acceso: si el usuario no inició sesión con credenciales válidas, solo ve la pantalla de Login
   if (!sesion) {
